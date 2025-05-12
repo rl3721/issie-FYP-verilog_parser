@@ -8,25 +8,75 @@
 # Pass your lexer object using the @lexer option:
 @lexer lexer
 
+############### GRAMMAR FOR VERILOG 2005 ####################
+# This grammar is based on the Verilog 2005 standard
+# The grammar is not a complete implementation only a synthesizable subset
+# naming are generally based on the Verilog 2005 standard
 
 
-PROGRAM -> MODULE {%function(d) {return {Type: "program", Module: d[0]};} %}
-# _ for optional whitespace, _ for obligatory whitespace
-MODULE 
-    -> _ %module _ NAME_OF_MODULE _ %lparen _ LIST_OF_PORTS _ %rparen _ %semicolon _ MODULE_ITEMS %endmodule _ {%function(d) { return {Type: "module_old", ModuleName: d[3], PortList: d[7], ModuleItems: d[13], EndLocation: d[14].offset}; } %}
-    | _ %module _ NAME_OF_MODULE _ %lparen _ (IO_ITEMS _ {%function(d){return d[0];}%}):? %rparen _ %semicolon _ NON_PORT_MODULE_ITEMS %endmodule _ {%function(d) {return {Type: "module_new", ModuleName: d[3], IOItems: d[7], ModuleItems: d[12], EndLocation: d[13].offset};} %}
+##################### 1 Source Text ####################
+#### 1.1 Library Source Text ####
+# Out of scope for project, not implemented
 
-NAME_OF_MODULE -> IDENTIFIER {% id %}
- 
+#### 1.2 Verilog Source Text ####
+# the starting token of the grammar
+PROGRAM -> MODULE_DECLARATION {%function(d) {return {Type: "program", Module: d[0]};} %}
+
+# DESCRIPTION
+# token ommitted as non MODULE_DECLARATION token not implemented
+
+# two types of module syntax in verilog, the old style and the new style
+# TODO: add support for parameters
+MODULE_DECLARATION 
+    -> _ %module _ NAME_OF_MODULE _ %lparen _ LIST_OF_PORTS _ %rparen _ %semicolon _ (MODULE_ITEM:* {%function(d) {return {Type: "module_items", ItemList: d[0]};} %}) %endmodule _ 
+        {%function(d) { return {Type: "module_old", ModuleName: d[3], PortList: d[7], ModuleItems: d[13], EndLocation: d[14].offset}; } %}
+
+    | _ %module _ NAME_OF_MODULE _ %lparen _ (LIST_OF_PORT_DECLARATIONS _ {%function(d){return d[0];}%}):? %rparen _ %semicolon _ (NON_PORT_MODULE_ITEM:* {%function(d) {return {Type: "module_items", ItemList: d[0]};} %}) %endmodule _ 
+        {%function(d) {return {Type: "module_new", ModuleName: d[3], IOItems: d[7], ModuleItems: d[12], EndLocation: d[13].offset};} %}
+
+# MODULE_KEYWORD
+# token ommitted, macromodule keyword not implemented, only module keyword used for MODULE_DECLARATION
+
+#### 1.3 Module parameters and ports ####
+# TODO: add support for parameters, check this for code generation 
+# MODULE_PARAMETER_PORT_LIST
+#     -> %hash %lparen PARAMETER_DECLARATION (%comma PARAMETER_DECLARATION {%(d) => {return d[1];}%}):* %rparen  {%function(d) {return {Type: "parameter_port_list", ParameterList: [d[2]].concat(d[3])};} %}
+#     | %hash %lparen %rparem {%function(d) {return {Type: "parameter_port_list", ParameterList: null};} %}
+
+# port list token for old style module declaration
 LIST_OF_PORTS
     -> PORT _ %comma _ LIST_OF_PORTS {%function(d, l, reject) {return {Type: "port_list", Head: d[0], Tail: d[4], Location: d[0].Location};} %}
     | PORT {% function(d,l,reject) {return {Type: "port_list", Head: d[0], Tail: null, Location: d[0].Location};}  %}
 
+# port list token for new style module declaration
+LIST_OF_PORT_DECLARATIONS 
+    -> PORT_DECLARATION _ %comma _ LIST_OF_PORT_DECLARATIONS {%function(d) {return {Type: "io_items", Head: d[0], Tail: d[4]};} %}
+    | PORT_DECLARATION {%function(d) {return {Type: "io_items", Head: d[0], Tail: null};} %}
+
+#  port token for old style module declaration, simplified to just IDENTIFIER as "multiple" declarations not supported
 PORT -> IDENTIFIER {%function(d) {return {Type: "port", Port: d[0], Location: d[0].Location};} %}
 
-MODULE_ITEMS -> MODULE_ITEM:* {%function(d) {return {Type: "module_items", ItemList: d[0]};} %}
+# PORT_EXPRESSION
+# token ommitted, not implemented
 
-NON_PORT_MODULE_ITEMS -> NON_PORT_MODULE_ITEM:* {%function(d) {return {Type: "module_items", ItemList: d[0]};} %}
+# PORT_REFERENCE
+# token ommitted, not implemented
+
+# port token for new style module declaration, inout not implemented
+PORT_DECLARATION
+    -> INPUT_DECL  {%function(d,l, reject) {return {Type: "item", ItemType: "input_decl", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
+    | OUTPUT_DECL  {%function(d,l, reject) {return {Type: "item", ItemType: "output_decl", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
+
+#### 1.4 Module items ####
+
+NAME_OF_MODULE -> IDENTIFIER {% id %}
+
+ 
+
+
+
+
+
 
 MODULE_ITEM
     -> INPUT_DECL _ %semicolon _  {%function(d,l, reject) {return {Type: "item", ItemType: "input_decl", IODecl: d[0], Decl: null, Statement: null, Location: d[0].Location};} %}
@@ -45,13 +95,9 @@ NON_PORT_MODULE_ITEM
     #| "initial" EVERYTHING {%function(d,l, reject) {return {Type: "NO-COMB", ItemType: d[0], IODecl: null, Decl: null, ParamDecl: null, Statement: null,  AlwaysConstruct: null, Location: l};} %}
     #| "case" EVERYTHING {%function(d,l, reject) {return {Type: "NO-CASE", ItemType: d[0], IODecl: null, ParamDecl: null, Statement: null,  AlwaysConstruct: null, Location: l};} %}
 
-IO_ITEMS 
-    -> IO_ITEM _ %comma _ IO_ITEMS {%function(d) {return {Type: "io_items", Head: d[0], Tail: d[4]};} %}
-    | IO_ITEM {%function(d) {return {Type: "io_items", Head: d[0], Tail: null};} %}
 
-IO_ITEM
-    -> INPUT_DECL  {%function(d,l, reject) {return {Type: "item", ItemType: "input_decl", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
-    | OUTPUT_DECL  {%function(d,l, reject) {return {Type: "item", ItemType: "output_decl", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
+
+
 
 #STATEMENTS -> STATEMENT_ITEM:* {%function(d) {return {Type: "module_items", ItemList: d[0]};} %}
 
@@ -258,7 +304,7 @@ ASSIGNMENT -> L_VALUE _ %op_assign _ EXPRESSION {%function(d) {return {Type: "as
 
 WIRE_ASSIGNMENT -> WIRE_L_VALUE _ %op_assign _ EXPRESSION {%function(d) {return {Type: "bit", LHS: d[0], RHS: d[4], Location:d[0].Primary.Location };} %} 
 
-###########################################      MODULE INSTANTIATION STATEMENTS    #############################
+###########################################      MODULE_DECLARATION INSTANTIATION STATEMENTS    #############################
 MODULE_INSTANTIATION_STATEMENT -> IDENTIFIER _ IDENTIFIER _ %lparen _ LIST_OF_PORT_CONNECTIONS _ %rparen _ %semicolon {%(d) => {return {Type: "module_instantiation", Module: d[0], Identifier: d[2], Connections: d[6]}}%}
 
 LIST_OF_PORT_CONNECTIONS ->
