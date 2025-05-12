@@ -83,32 +83,38 @@ SEQ_BLOCK
     -> %begin _ STATEMENT:+ %end _ {% function(d) {return{Type: "seq_block", Statements: d[2], Location: d[0].offset}; } %}
 
 #### 6.4 Statements ####
-STATEMENT 
-    -> BLOCKING_ASSIGNMENT _ %semicolon _ 
-        {%function(d,l,reject){
-            let assignment = d[0].Assignment;
-            assignment.Assignment.Type = "=";
-            return {Type: "statement", StatementType: "blocking_assignment", NonBlockingAssign: null, BlockingAssign: assignment, SeqBlock: null, Conditional: null,  CaseStatement: null, Location: d[0].Location};
-        } %}
-    | CASE_STATEMENT {%function(d,l,reject) {return {Type: "statement", StatementType: "case_stmt", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: null,  CaseStatement: d[0], Location: d[0].Location};}%}
-    | INCOMPLETE_CONDITIONAL_STATEMENT {%id%}
-    | COMPLETE_CONDITIONAL_STATEMENT  {%id%}
+# due to the dangling if-else problem, the grammar is refactored for this part as well as the conditional statement section
+# in order to avoid grammar ambiguity
+
+STATEMENT -> COMPLETE_STATEMENT {%id%}
+        | INCOMPLETE_CONDITIONAL_STATEMENT {%id%}
+
+COMPLETE_STATEMENT 
+    -> COMPLETE_CONDITIONAL_STATEMENT  {%id%}
     | NONBLOCKING_ASSIGNMENT _ %semicolon _ 
         {%function(d,l,reject) {
             let assignment = d[0].Assignment;
             assignment.Assignment.Type = "<=";
             return {Type: "statement", StatementType: "nonblocking_assignment", NonBlockingAssign: assignment, BlockingAssign: null, SeqBlock: null, Conditional: null, CaseStatement: null, Location: d[0].Location};
         } %}
+    | BLOCKING_ASSIGNMENT _ %semicolon _ 
+        {%function(d,l,reject){
+            let assignment = d[0].Assignment;
+            assignment.Assignment.Type = "=";
+            return {Type: "statement", StatementType: "blocking_assignment", NonBlockingAssign: null, BlockingAssign: assignment, SeqBlock: null, Conditional: null,  CaseStatement: null, Location: d[0].Location};
+        } %}
     | SEQ_BLOCK {%function(d,l,reject) {return {Type: "statement", StatementType: "seq_block", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: d[0], Conditional: null,  CaseStatement: null, Location: d[0].Location};} %} #change to statements?
+    | CASE_STATEMENT {%function(d,l,reject) {return {Type: "statement", StatementType: "case_stmt", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: null,  CaseStatement: d[0], Location: d[0].Location};}%}
 
+STATEMENT_OR_NULL
+    -> STATEMENT {% id %}
+    | %semicolon {% function(d,l,reject) {return null;} %}
 
+#### 6.5 Timing control statements ####
+# not implemented, complex timing and event trigger not supported by issie, always block grammar simplified
 
-CONDITIONAL_STATEMENT ->
-    # IF ELSE_IF:* ELSE:? {%function(d) {if_statements=[d[0]].concat(d[1]); return {Type: "cond_stmt", IfStatements: if_statements, ElseStatement: d[2]}}%}
-    IF ELSE:? {% function(d) {return {Type: "cond_stmt", IfStatement: d[0], ElseStatement: d[1], Location: d[0].Location};} %}
-
-
-
+#### 6.6 conditional statement ####
+# incomplete conditional_statement encoperated to address dangling if-else problem
 
 COMPLETE_CONDITIONAL_STATEMENT 
     -> %t_if _ %lparen _ EXPRESSION _ %rparen _ STATEMENT  %t_else _ STATEMENT {% function(d) {
@@ -129,78 +135,30 @@ INCOMPLETE_CONDITIONAL_STATEMENT
         return {Type: "statement", StatementType: "conditional", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: conditional,  CaseStatement: null, Location: d[0].offset}
     } %}
 
-# this might be ambiguous grammar? I want to have it this way because code gen should be easier maybe
-IF -> %t_if _ %lparen _ EXPRESSION _ %rparen _ STATEMENT {% function(d) {return {Type: "ifstmt", Condition: d[4], Statement: d[8], Location: d[0].offset}; } %}
-ELSE_IF -> %t_else _ %t_if _ %lparen _ EXPRESSION _ %rparen _ STATEMENT {% function(d) {return {Condition: d[6], Statement: d[10]}; } %}
-ELSE -> %t_else _ STATEMENT {% function(d) {return d[2]; } %}
-
-STATEMENT2
-    -> NONBLOCKING_ASSIGNMENT _ %semicolon _ 
-        {%function(d,l,reject) {
-            //let len = d[2].offset-d[0].Assignment.LHS.Primary.Location+1;
-            //const name = 'a'.repeat(len);
-            let assignment = d[0].Assignment;
-            assignment.Assignment.Type = "<=";
-            return {Type: "statement", StatementType: "nonblocking_assignment", NonBlockingAssign: assignment, BlockingAssign: null, SeqBlock: null, Conditional: null, CaseStatement: null, Location: d[0].Location};
-        } %}
-    | BLOCKING_ASSIGNMENT _ %semicolon _ 
-        {%function(d,l,reject){
-            //let len = d[2].offset-d[0].Assignment.LHS.Primary.Location+1;
-            //const name = 'a'.repeat(len);
-            let assignment = d[0].Assignment;
-            assignment.Assignment.Type = "=";
-            return {Type: "statement", StatementType: "blocking_assignment", NonBlockingAssign: null, BlockingAssign: assignment, SeqBlock: null, Conditional: null,  CaseStatement: null, Location: d[0].Location};
-        } %}
-    | SEQ_BLOCK {%function(d,l,reject) {return {Type: "statement", StatementType: "seq_block", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: d[0], Conditional: null,  CaseStatement: null, Location: d[0].Location};} %} #change to statements?
-    | CONDITIONAL_STATEMENT {%function(d,l,reject) {return {Type: "statement", StatementType: "conditional", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: d[0],  CaseStatement: null, Location: d[0].Location};}%}
-    | CASE_STATEMENT {%function(d,l,reject) {return {Type: "statement", StatementType: "case_stmt", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: null,  CaseStatement: d[0], Location: d[0].Location};}%}
-
-################# CASE STATEMENTS ###################
-CASE_STATEMENT # probs only care about first one
+#### 6.7 Case statements ####
+CASE_STATEMENT 
+    # casez and casex not supported as issie supports only 2 state variable, refactor to encoperate the default case
     -> %t_case _ %lparen _ EXPRESSION _ %rparen _ (CASE_ITEM {% id %}):+  DEFAULT:? %t_endcase _ {%function(d) { 
         return {Type: "case_stmt", Expression: d[4], CaseItems: d[8], Default: d[9], Location: d[0].offset};}%}
-    #| CASE_KEYWORD (case_expression ) "matches" case_pattern_item { case_pattern_item } endcase
-    #|  "case" ( case_expression ) "inside"
-    #   case_inside_item { case_inside_item } endcase
-VARIABLE_LVALUE -> 
-    NET_LVALUE {% id %}
-    | VARIABLE_BITSELECT_L_VALUE {% id %}
 
-# for clarity default should be last
-DEFAULT
-    -> %t_default _ %colon _ STATEMENT {% function(d){return d[4];}%}
+# TODO: generalize it such constant expression is accepted
 CASE_ITEM
     -> NUMBER  _ (%comma _ NUMBER _ {%function(d){return d[2];}%}):*  %colon _ STATEMENT
         {% function(d) {expr = [d[0]].concat(d[2]); return {Type: "case_item", Expressions: expr, Statement: d[5]};}%}
-    #| default [ : ] statement_or_null
 
-# case_pattern_item ::=
-#     pattern [ &&& expression ] : statement_or_null
-#     | default [ : ] statement_or_null
-# case_inside_item ::=
-#     open_range_list : statement_or_null
-#     | default [ : ] statement_or_null
+# the non official grammar for default case only allows default case to be put last of the case
+# this eliminates some generality but it is the recommended way of writing verilog for clarity
+DEFAULT
+    -> %t_default _ %colon _ STATEMENT {% function(d){return d[4];}%}
 
+#### 6.8 Looping statements ####
+# not implemented as not always synthesizable
 
+#### 6.9 task enable statements ####
+# not implemented
 
-# EDGE_IDENTIFIER -> "posedge" | "negedge" | "edge"
-
-# EVENT_EXPRESSION
-#     -> EDGE_IDENTIFIER:? EXPRESSION ("iff" _ EXPRESSION):?
-#     #| sequence_instance [ iff expression ] # check what this is!
-#     | EVENT_EXPRESSION _ "or" _ EVENT_EXPRESSION
-#     | EVENT_EXPRESSION _ "," _ EVENT_EXPRESSION
-#     | "(" _ EVENT_EXPRESSION _ ")"
-
-# PROCEDURAL_TIMING_CONTROL
-#     -> "@" IDENTIFIER  #hierarchical_event_identifier
-#     | "@" _ "(" EVENT_EXPRESSION ")"
-#     | "@" _ "*"
-#     | "@" _ "(" _ "*" _ ")"
-#     #| "@" ps_or_hierarchical_sequence_identifier
-
-
-
+################# 7. Specify Region ##################
+# not implemented, out of scope of project
 
 
 ###########################################      EXPRESSIONS      ###############################################
@@ -217,6 +175,10 @@ NET_LVALUE
 VARIABLE_BITSELECT_L_VALUE
     -> IDENTIFIER _ %lbracket EXPRESSION %rbracket {%function(d) {return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: null, BitsEnd: null, Primary: d[0], VariableBitSelect: d[3], Width: 1};} %}
     #| IDENTIFIER _ %lbracket EXPRESSION _ %minus _ %colon UNSIGNED_NUMBER %rbracket {%function(d) {return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: null, BitsEnd: null, Primary: d[0], VariableBitSelect: d[3], Width: parseInt(d[8].value)};} %} 
+
+VARIABLE_LVALUE -> 
+    NET_LVALUE {% id %}
+    | VARIABLE_BITSELECT_L_VALUE {% id %}
 
 
 EXPRESSION -> CONDITIONAL {% id %}

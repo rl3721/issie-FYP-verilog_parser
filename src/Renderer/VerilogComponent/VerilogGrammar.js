@@ -106,23 +106,23 @@ var grammar = {
     {"name": "SEQ_BLOCK$ebnf$1", "symbols": ["STATEMENT"]},
     {"name": "SEQ_BLOCK$ebnf$1", "symbols": ["SEQ_BLOCK$ebnf$1", "STATEMENT"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
     {"name": "SEQ_BLOCK", "symbols": [(lexer.has("begin") ? {type: "begin"} : begin), "_", "SEQ_BLOCK$ebnf$1", (lexer.has("end") ? {type: "end"} : end), "_"], "postprocess": function(d) {return{Type: "seq_block", Statements: d[2], Location: d[0].offset}; }},
-    {"name": "STATEMENT", "symbols": ["BLOCKING_ASSIGNMENT", "_", (lexer.has("semicolon") ? {type: "semicolon"} : semicolon), "_"], "postprocess": function(d,l,reject){
-            let assignment = d[0].Assignment;
-            assignment.Assignment.Type = "=";
-            return {Type: "statement", StatementType: "blocking_assignment", NonBlockingAssign: null, BlockingAssign: assignment, SeqBlock: null, Conditional: null,  CaseStatement: null, Location: d[0].Location};
-        } },
-    {"name": "STATEMENT", "symbols": ["CASE_STATEMENT"], "postprocess": function(d,l,reject) {return {Type: "statement", StatementType: "case_stmt", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: null,  CaseStatement: d[0], Location: d[0].Location};}},
+    {"name": "STATEMENT", "symbols": ["COMPLETE_STATEMENT"], "postprocess": id},
     {"name": "STATEMENT", "symbols": ["INCOMPLETE_CONDITIONAL_STATEMENT"], "postprocess": id},
-    {"name": "STATEMENT", "symbols": ["COMPLETE_CONDITIONAL_STATEMENT"], "postprocess": id},
-    {"name": "STATEMENT", "symbols": ["NONBLOCKING_ASSIGNMENT", "_", (lexer.has("semicolon") ? {type: "semicolon"} : semicolon), "_"], "postprocess": function(d,l,reject) {
+    {"name": "COMPLETE_STATEMENT", "symbols": ["COMPLETE_CONDITIONAL_STATEMENT"], "postprocess": id},
+    {"name": "COMPLETE_STATEMENT", "symbols": ["NONBLOCKING_ASSIGNMENT", "_", (lexer.has("semicolon") ? {type: "semicolon"} : semicolon), "_"], "postprocess": function(d,l,reject) {
             let assignment = d[0].Assignment;
             assignment.Assignment.Type = "<=";
             return {Type: "statement", StatementType: "nonblocking_assignment", NonBlockingAssign: assignment, BlockingAssign: null, SeqBlock: null, Conditional: null, CaseStatement: null, Location: d[0].Location};
         } },
-    {"name": "STATEMENT", "symbols": ["SEQ_BLOCK"], "postprocess": function(d,l,reject) {return {Type: "statement", StatementType: "seq_block", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: d[0], Conditional: null,  CaseStatement: null, Location: d[0].Location};}},
-    {"name": "CONDITIONAL_STATEMENT$ebnf$1", "symbols": ["ELSE"], "postprocess": id},
-    {"name": "CONDITIONAL_STATEMENT$ebnf$1", "symbols": [], "postprocess": function(d) {return null;}},
-    {"name": "CONDITIONAL_STATEMENT", "symbols": ["IF", "CONDITIONAL_STATEMENT$ebnf$1"], "postprocess": function(d) {return {Type: "cond_stmt", IfStatement: d[0], ElseStatement: d[1], Location: d[0].Location};}},
+    {"name": "COMPLETE_STATEMENT", "symbols": ["BLOCKING_ASSIGNMENT", "_", (lexer.has("semicolon") ? {type: "semicolon"} : semicolon), "_"], "postprocess": function(d,l,reject){
+            let assignment = d[0].Assignment;
+            assignment.Assignment.Type = "=";
+            return {Type: "statement", StatementType: "blocking_assignment", NonBlockingAssign: null, BlockingAssign: assignment, SeqBlock: null, Conditional: null,  CaseStatement: null, Location: d[0].Location};
+        } },
+    {"name": "COMPLETE_STATEMENT", "symbols": ["SEQ_BLOCK"], "postprocess": function(d,l,reject) {return {Type: "statement", StatementType: "seq_block", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: d[0], Conditional: null,  CaseStatement: null, Location: d[0].Location};}},
+    {"name": "COMPLETE_STATEMENT", "symbols": ["CASE_STATEMENT"], "postprocess": function(d,l,reject) {return {Type: "statement", StatementType: "case_stmt", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: null,  CaseStatement: d[0], Location: d[0].Location};}},
+    {"name": "STATEMENT_OR_NULL", "symbols": ["STATEMENT"], "postprocess": id},
+    {"name": "STATEMENT_OR_NULL", "symbols": [(lexer.has("semicolon") ? {type: "semicolon"} : semicolon)], "postprocess": function(d,l,reject) {return null;}},
     {"name": "COMPLETE_CONDITIONAL_STATEMENT", "symbols": [(lexer.has("t_if") ? {type: "t_if"} : t_if), "_", (lexer.has("lparen") ? {type: "lparen"} : lparen), "_", "EXPRESSION", "_", (lexer.has("rparen") ? {type: "rparen"} : rparen), "_", "STATEMENT", (lexer.has("t_else") ? {type: "t_else"} : t_else), "_", "STATEMENT"], "postprocess":  function(d) {
         let ifStmt = {Type: "ifstmt", Condition: d[4], Statement: d[8], Location: d[0].offset};
         let conditional = {Type: "cond_stmt", IfStatement: ifStmt, ElseStatement: d[11], Location: d[0].offset};
@@ -138,26 +138,6 @@ var grammar = {
             let conditional = {Type: "cond_stmt", IfStatement: ifStmt, ElseStatement: d[11], Location: d[0].offset};
             return {Type: "statement", StatementType: "conditional", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: conditional,  CaseStatement: null, Location: d[0].offset}
         } },
-    {"name": "IF", "symbols": [(lexer.has("t_if") ? {type: "t_if"} : t_if), "_", (lexer.has("lparen") ? {type: "lparen"} : lparen), "_", "EXPRESSION", "_", (lexer.has("rparen") ? {type: "rparen"} : rparen), "_", "STATEMENT"], "postprocess": function(d) {return {Type: "ifstmt", Condition: d[4], Statement: d[8], Location: d[0].offset}; }},
-    {"name": "ELSE_IF", "symbols": [(lexer.has("t_else") ? {type: "t_else"} : t_else), "_", (lexer.has("t_if") ? {type: "t_if"} : t_if), "_", (lexer.has("lparen") ? {type: "lparen"} : lparen), "_", "EXPRESSION", "_", (lexer.has("rparen") ? {type: "rparen"} : rparen), "_", "STATEMENT"], "postprocess": function(d) {return {Condition: d[6], Statement: d[10]}; }},
-    {"name": "ELSE", "symbols": [(lexer.has("t_else") ? {type: "t_else"} : t_else), "_", "STATEMENT"], "postprocess": function(d) {return d[2]; }},
-    {"name": "STATEMENT2", "symbols": ["NONBLOCKING_ASSIGNMENT", "_", (lexer.has("semicolon") ? {type: "semicolon"} : semicolon), "_"], "postprocess": function(d,l,reject) {
-            //let len = d[2].offset-d[0].Assignment.LHS.Primary.Location+1;
-            //const name = 'a'.repeat(len);
-            let assignment = d[0].Assignment;
-            assignment.Assignment.Type = "<=";
-            return {Type: "statement", StatementType: "nonblocking_assignment", NonBlockingAssign: assignment, BlockingAssign: null, SeqBlock: null, Conditional: null, CaseStatement: null, Location: d[0].Location};
-        } },
-    {"name": "STATEMENT2", "symbols": ["BLOCKING_ASSIGNMENT", "_", (lexer.has("semicolon") ? {type: "semicolon"} : semicolon), "_"], "postprocess": function(d,l,reject){
-            //let len = d[2].offset-d[0].Assignment.LHS.Primary.Location+1;
-            //const name = 'a'.repeat(len);
-            let assignment = d[0].Assignment;
-            assignment.Assignment.Type = "=";
-            return {Type: "statement", StatementType: "blocking_assignment", NonBlockingAssign: null, BlockingAssign: assignment, SeqBlock: null, Conditional: null,  CaseStatement: null, Location: d[0].Location};
-        } },
-    {"name": "STATEMENT2", "symbols": ["SEQ_BLOCK"], "postprocess": function(d,l,reject) {return {Type: "statement", StatementType: "seq_block", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: d[0], Conditional: null,  CaseStatement: null, Location: d[0].Location};}},
-    {"name": "STATEMENT2", "symbols": ["CONDITIONAL_STATEMENT"], "postprocess": function(d,l,reject) {return {Type: "statement", StatementType: "conditional", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: d[0],  CaseStatement: null, Location: d[0].Location};}},
-    {"name": "STATEMENT2", "symbols": ["CASE_STATEMENT"], "postprocess": function(d,l,reject) {return {Type: "statement", StatementType: "case_stmt", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: null,  CaseStatement: d[0], Location: d[0].Location};}},
     {"name": "CASE_STATEMENT$ebnf$1$subexpression$1", "symbols": ["CASE_ITEM"], "postprocess": id},
     {"name": "CASE_STATEMENT$ebnf$1", "symbols": ["CASE_STATEMENT$ebnf$1$subexpression$1"]},
     {"name": "CASE_STATEMENT$ebnf$1$subexpression$2", "symbols": ["CASE_ITEM"], "postprocess": id},
