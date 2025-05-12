@@ -189,7 +189,7 @@ export function fix(json_data) {
 
         try {
             for (let i = 0; i < item_list.length; i++) {
-                if ((item_list[i].ItemType == "input_decl") | (item_list[i].ItemType == "output_decl")) {
+                if ((item_list[i].ItemType == "input_declaration") | (item_list[i].ItemType == "output_declaration")) {
                     let variables = item_list[i].IODecl.Variables;
                     while (variables.Tail != null) {
                         temp_var.push(variables.Head.Name);
@@ -234,7 +234,7 @@ export function fix(json_data) {
 
         try {
             for (let i = 0; i < io_list.length; i++) {
-                if ((io_list[i].ItemType == "input_decl") | (io_list[i].ItemType == "output_decl" )) {
+                if ((io_list[i].ItemType == "input_declaration") | (io_list[i].ItemType == "output_declaration" )) {
                     let variables = io_list[i].IODecl.Variables;
                     while (variables.Tail != null) {
                         temp_var.push(variables.Head.Name);

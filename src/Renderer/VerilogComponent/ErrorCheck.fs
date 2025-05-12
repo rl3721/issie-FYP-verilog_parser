@@ -165,7 +165,7 @@ let checkIODeclarations
 let checkIOWidthDeclarations (ast: VerilogInput) linesLocations errorList  =
     ast.Module.ModuleItems.ItemList
     |> Array.filter (fun item -> 
-        item.ItemType = "output_decl" || item.ItemType = "input_decl"  
+        item.ItemType = "output_declaration" || item.ItemType = "input_declaration"  
     )
     |> Array.toList
     |> List.map (fun item -> Option.get item.IODecl)

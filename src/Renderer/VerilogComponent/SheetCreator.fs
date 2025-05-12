@@ -308,7 +308,7 @@ let createIOComponent (item:ItemT) ioType (oldMap)  =
     let width = getWidthFromRange (Option.get item.IODecl).Range
     let compType = 
         match ioType with
-        |"input_decl" -> Input1 (width,Some 0I)
+        |"input_declaration" -> Input1 (width,Some 0I)
         |_ -> Output width
 
     let names =

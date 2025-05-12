@@ -96,15 +96,15 @@ MODULE_ITEMS -> MODULE_ITEM:* {%function(d) {return {Type: "module_items", ItemL
 NON_PORT_MODULE_ITEMS -> NON_PORT_MODULE_ITEM:* {%function(d) {return {Type: "module_items", ItemList: d[0]};} %}
 
 MODULE_ITEM
-    -> INPUT_DECL _ %semicolon _  {%function(d,l, reject) {return {Type: "item", ItemType: "input_decl", IODecl: d[0], Decl: null, Statement: null, Location: d[0].Location};} %}
-    | OUTPUT_DECL _ %semicolon _ {%function(d,l, reject) {return {Type: "item", ItemType: "output_decl", IODecl: d[0], Decl: null, Statement: null, Location: d[0].Location};} %}
+    -> INPUT_DECL _ %semicolon _  {%function(d,l, reject) {return {Type: "module_item", ItemType: "input_declaration", IODecl: d[0], Decl: null, Statement: null, Location: d[0].Location};} %}
+    | OUTPUT_DECL _ %semicolon _ {%function(d,l, reject) {return {Type: "module_item", ItemType: "output_declaration", IODecl: d[0], Decl: null, Statement: null, Location: d[0].Location};} %}
     | NON_PORT_MODULE_ITEM {% id %} #?
 
 NON_PORT_MODULE_ITEM
-   -> CONTINUOUS_ASSIGNMENT _ {%function(d,l, reject) {return {Type: "item", ItemType: "statement", IODecl: null, Decl: null, Statement: d[0], AlwaysConstruct: null, Location: d[0].Location};} %}
-    | ALWAYS_CONSTRUCT {%function(d,l, reject) {return {Type: "item", ItemType: "always_construct", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: d[0], Location: d[0].Location};} %}
-    | REG_DECLARATION _ {%function(d,l, reject) {return {Type: "item", ItemType: "logic_decl", IODecl: null, Decl: d[0], Statement: null, AlwaysConstruct: null,Location: d[0].Location};} %}
-    | MODULE_INSTANTIATION_STATEMENT _ {%function(d,l, reject) { return {Type: "item", ItemType: "module_instantiation", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: null, ModuleInstantiation: d[0], Location: d[0].Module.Location};} %}
+   -> CONTINUOUS_ASSIGNMENT _ {%function(d,l, reject) {return {Type: "module_item", ItemType: "statement", IODecl: null, Decl: null, Statement: d[0], AlwaysConstruct: null, Location: d[0].Location};} %}
+    | ALWAYS_CONSTRUCT {%function(d,l, reject) {return {Type: "module_item", ItemType: "always_construct", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: d[0], Location: d[0].Location};} %}
+    | REG_DECLARATION _ {%function(d,l, reject) {return {Type: "module_item", ItemType: "logic_decl", IODecl: null, Decl: d[0], Statement: null, AlwaysConstruct: null,Location: d[0].Location};} %}
+    | MODULE_INSTANTIATION_STATEMENT _ {%function(d,l, reject) { return {Type: "module_item", ItemType: "module_instantiation", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: null, ModuleInstantiation: d[0], Location: d[0].Module.Location};} %}
     #| "logic" __ EVERYTHING {%function(d,l, reject) {return {Type: "WIRE-DECL", ItemType: d[0], IODecl: null, Decl: null, Statement: null, AlwaysConstruct: null, Location: l};} %}
     #| "reg" __ EVERYTHING {%function(d,l, reject) {return {Type: "NO-COMB", ItemType: d[0], IODecl: null, Decl: null, ParamDecl: null, Statement: null,  AlwaysConstruct: null, Location: l};} %}
     #| "always" EVERYTHING {%function(d,l, reject) {return {Type: "NO-COMB", ItemType: d[0], IODecl: null, Decl: null, ParamDecl: null, Statement: null, Location: l};} %}
@@ -117,13 +117,13 @@ IO_ITEMS
     | IO_ITEM {%function(d) {return {Type: "io_items", Head: d[0], Tail: null};} %}
 
 IO_ITEM
-    -> INPUT_DECL  {%function(d,l, reject) {return {Type: "item", ItemType: "input_decl", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
-    | OUTPUT_DECL  {%function(d,l, reject) {return {Type: "item", ItemType: "output_decl", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
+    -> INPUT_DECL  {%function(d,l, reject) {return {Type: "module_item", ItemType: "input_declaration", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
+    | OUTPUT_DECL  {%function(d,l, reject) {return {Type: "module_item", ItemType: "output_declaration", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
 
 #STATEMENTS -> STATEMENT_ITEM:* {%function(d) {return {Type: "module_items", ItemList: d[0]};} %}
 
 #STATEMENT_ITEM -> 
-    #STATEMENT _ {%function(d,l, reject) {return {Type: "item", ItemType: "statement", IODecl: null, ParamDecl: null, Statement: d[0], Location: l};} %}
+    #STATEMENT _ {%function(d,l, reject) {return {Type: "module_item", ItemType: "statement", IODecl: null, ParamDecl: null, Statement: d[0], Location: l};} %}
 ############################################    DECLARATIONS    ###############################################
 
 

@@ -20,7 +20,7 @@
 
 #### 1.2 Verilog Source Text ####
 # the starting token of the grammar
-PROGRAM -> MODULE_DECLARATION {%function(d) {return {Type: "program", Module: d[0]};} %}
+SOURCE_TEXT -> MODULE_DECLARATION {%function(d) {return {Type: "source_text", Module: d[0]};} %}
 
 # DESCRIPTION
 # token ommitted as non MODULE_DECLARATION token not implemented
@@ -28,10 +28,10 @@ PROGRAM -> MODULE_DECLARATION {%function(d) {return {Type: "program", Module: d[
 # two types of module syntax in verilog, the old style and the new style
 # TODO: add support for parameters
 MODULE_DECLARATION 
-    -> _ %module _ NAME_OF_MODULE _ %lparen _ LIST_OF_PORTS _ %rparen _ %semicolon _ (MODULE_ITEM:* {%function(d) {return {Type: "module_items", ItemList: d[0]};} %}) %endmodule _ 
+    -> _ %module _ NAME_OF_MODULE _ %lparen _ LIST_OF_PORTS _ %rparen _ %semicolon _ (MODULE_ITEM:* {%function(d) {return {Type: "module_declartion", ItemList: d[0]};} %}) %endmodule _ 
         {%function(d) { return {Type: "module_old", ModuleName: d[3], PortList: d[7], ModuleItems: d[13], EndLocation: d[14].offset}; } %}
 
-    | _ %module _ NAME_OF_MODULE _ %lparen _ (LIST_OF_PORT_DECLARATIONS _ {%function(d){return d[0];}%}):? %rparen _ %semicolon _ (NON_PORT_MODULE_ITEM:* {%function(d) {return {Type: "module_items", ItemList: d[0]};} %}) %endmodule _ 
+    | _ %module _ NAME_OF_MODULE _ %lparen _ (LIST_OF_PORT_DECLARATIONS _ {%function(d){return d[0];}%}):? %rparen _ %semicolon _ (NON_PORT_MODULE_ITEM:* {%function(d) {return {Type: "module_declartion", ItemList: d[0]};} %}) %endmodule _ 
         {%function(d) {return {Type: "module_new", ModuleName: d[3], IOItems: d[7], ModuleItems: d[12], EndLocation: d[13].offset};} %}
 
 # MODULE_KEYWORD
@@ -45,13 +45,13 @@ MODULE_DECLARATION
 
 # port list token for old style module declaration
 LIST_OF_PORTS
-    -> PORT _ %comma _ LIST_OF_PORTS {%function(d, l, reject) {return {Type: "port_list", Head: d[0], Tail: d[4], Location: d[0].Location};} %}
-    | PORT {% function(d,l,reject) {return {Type: "port_list", Head: d[0], Tail: null, Location: d[0].Location};}  %}
+    -> PORT _ %comma _ LIST_OF_PORTS {%function(d, l, reject) {return {Type: "list_of_ports", Head: d[0], Tail: d[4], Location: d[0].Location};} %}
+    | PORT {% function(d,l,reject) {return {Type: "list_of_ports", Head: d[0], Tail: null, Location: d[0].Location};}  %}
 
 # port list token for new style module declaration
 LIST_OF_PORT_DECLARATIONS 
-    -> PORT_DECLARATION _ %comma _ LIST_OF_PORT_DECLARATIONS {%function(d) {return {Type: "io_items", Head: d[0], Tail: d[4]};} %}
-    | PORT_DECLARATION {%function(d) {return {Type: "io_items", Head: d[0], Tail: null};} %}
+    -> PORT_DECLARATION _ %comma _ LIST_OF_PORT_DECLARATIONS {%function(d) {return {Type: "list_of_port_declarations", Head: d[0], Tail: d[4]};} %}
+    | PORT_DECLARATION {%function(d) {return {Type: "list_of_port_declarations", Head: d[0], Tail: null};} %}
 
 #  port token for old style module declaration, simplified to just IDENTIFIER as "multiple" declarations not supported
 PORT -> IDENTIFIER {%function(d) {return {Type: "port", Port: d[0], Location: d[0].Location};} %}
@@ -64,71 +64,162 @@ PORT -> IDENTIFIER {%function(d) {return {Type: "port", Port: d[0], Location: d[
 
 # port token for new style module declaration, inout not implemented
 PORT_DECLARATION
-    -> INPUT_DECL  {%function(d,l, reject) {return {Type: "item", ItemType: "input_decl", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
-    | OUTPUT_DECL  {%function(d,l, reject) {return {Type: "item", ItemType: "output_decl", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
+    -> INPUT_DECLARATION  {%function(d,l, reject) {return {Type: "module_item", ItemType: "input_declaration", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
+    | OUTPUT_DECLARATION  {%function(d,l, reject) {return {Type: "module_item", ItemType: "output_declaration", IODecl: d[0], ParamDecl: null, Statement: null, Location: d[0].Location};} %}
 
 #### 1.4 Module items ####
 
-NAME_OF_MODULE -> IDENTIFIER {% id %}
-
- 
-
-
-
-
-
-
+# token for module of old style declaration, including port declaration
 MODULE_ITEM
-    -> INPUT_DECL _ %semicolon _  {%function(d,l, reject) {return {Type: "item", ItemType: "input_decl", IODecl: d[0], Decl: null, Statement: null, Location: d[0].Location};} %}
-    | OUTPUT_DECL _ %semicolon _ {%function(d,l, reject) {return {Type: "item", ItemType: "output_decl", IODecl: d[0], Decl: null, Statement: null, Location: d[0].Location};} %}
-    | NON_PORT_MODULE_ITEM {% id %} #?
+    -> PORT_DECLARATION %semicolon {%function(d,l, reject) {return d[0];} %}
+    | NON_PORT_MODULE_ITEM {% id %}
 
+# subset of non port module items, rules of unsynthesizable and unimplemented tokens are omitted
+MODULE_OR_GENERATE_ITEM
+    -> MODULE_OR_GENERATE_IETM_DECLARATION {% id %}
+    # LOCAL_PARAMETER_DECLARATION # TODO: add support for local parameter declaration
+    | CONTINUOUS_ASSIGN _ {%function(d,l, reject) {return {Type: "module_item", ItemType: "statement", IODecl: null, Decl: null, Statement: d[0], AlwaysConstruct: null, Location: d[0].Location};} %}
+    | ALWAYS_CONSTRUCT {%function(d,l, reject) {return {Type: "module_item", ItemType: "always_construct", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: d[0], Location: d[0].Location};} %}
+    | MODULE_INSTANTIATION _ {%function(d,l, reject) { return {Type: "module_item", ItemType: "module_instantiation", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: null, ModuleInstantiation: d[0], Location: d[0].Module.Location};} %}
+    # LOOP_GENERATE_CONSTRUCT # TODO: add support for loop generate construct
+    # CONDITIONAL_GENERATE_CONSTRUCT # TODO: add support for conditional generate construct
+    
+# subset of non port module items, declarations of nets and regs, logic declaration is part of SystemVerilog that is added
+# data types of int, time, etc are not implemented 
+MODULE_OR_GENERATE_IETM_DECLARATION
+    -> LOGIC_DECLARATION _ {%function(d,l, reject) {return {Type: "module_item", ItemType: "logic_declaration", IODecl: null, Decl: d[0], Statement: null, AlwaysConstruct: null,Location: d[0].Location};} %}
+    # REG_DECLARATION # TODO: add support for reg declaration
+    # NET_DECLARATION # TODO: add support for net declaration
+    # GENVAR_DECLARATION # TODO: add support for genvar declaration
+    
+# token for module of new style declaration, specify block and associated specparam not implemented
 NON_PORT_MODULE_ITEM
-   -> CONTINUOUS_ASSIGNMENT _ {%function(d,l, reject) {return {Type: "item", ItemType: "statement", IODecl: null, Decl: null, Statement: d[0], AlwaysConstruct: null, Location: d[0].Location};} %}
-    | ALWAYS_CONSTRUCT {%function(d,l, reject) {return {Type: "item", ItemType: "always_construct", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: d[0], Location: d[0].Location};} %}
-    | REG_DECLARATION _ {%function(d,l, reject) {return {Type: "item", ItemType: "logic_decl", IODecl: null, Decl: d[0], Statement: null, AlwaysConstruct: null,Location: d[0].Location};} %}
-    | MODULE_INSTANTIATION_STATEMENT _ {%function(d,l, reject) { return {Type: "item", ItemType: "module_instantiation", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: null, ModuleInstantiation: d[0], Location: d[0].Module.Location};} %}
-    #| "logic" _ EVERYTHING {%function(d,l, reject) {return {Type: "WIRE-DECL", ItemType: d[0], IODecl: null, Decl: null, Statement: null, AlwaysConstruct: null, Location: l};} %}
-    #| "reg" _ EVERYTHING {%function(d,l, reject) {return {Type: "NO-COMB", ItemType: d[0], IODecl: null, Decl: null, ParamDecl: null, Statement: null,  AlwaysConstruct: null, Location: l};} %}
-    #| "always" EVERYTHING {%function(d,l, reject) {return {Type: "NO-COMB", ItemType: d[0], IODecl: null, Decl: null, ParamDecl: null, Statement: null, Location: l};} %}
-    #| "always_comb" EVERYTHING {%function(d,l, reject) {return {Type: "NO-COMB", ItemType: d[0], IODecl: null, ParamDecl: null, Statement: null, Location: l};} %}
-    #| "initial" EVERYTHING {%function(d,l, reject) {return {Type: "NO-COMB", ItemType: d[0], IODecl: null, Decl: null, ParamDecl: null, Statement: null,  AlwaysConstruct: null, Location: l};} %}
-    #| "case" EVERYTHING {%function(d,l, reject) {return {Type: "NO-CASE", ItemType: d[0], IODecl: null, ParamDecl: null, Statement: null,  AlwaysConstruct: null, Location: l};} %}
+    -> MODULE_OR_GENERATE_ITEM {% id %}
+    # | GENERATE_REGION # TODO: add support for generate region
+    # | PARAMETER_DECLARATION # TODO: add support for parameter declaration
 
+# PARAMETER_OVERRIDE
+# not implemented, old style of overriding parameters and warned by most synthesis tools
 
+#### 1.5 Configuration source text ####
+# Out of scope for project, not implemented
 
+##################### 2. Declarations ####################
+#### 2.1 Declaration types ####
+### 2.1.1 Module parameter declaration ###
+# TODO: add support for module parameter declaration
 
+### 2.1.2 Port declarations ###
 
-#STATEMENTS -> STATEMENT_ITEM:* {%function(d) {return {Type: "module_items", ItemList: d[0]};} %}
-
-#STATEMENT_ITEM -> 
-    #STATEMENT _ {%function(d,l, reject) {return {Type: "item", ItemType: "statement", IODecl: null, ParamDecl: null, Statement: d[0], Location: l};} %}
-############################################    DECLARATIONS    ###############################################
-
-
-INPUT_DECL -> input _ (%bit _ ) (RANGE _ {%(d) => {return d[0]}%}):? LIST_OF_VARIABLES  {%function(d) {
+### TODO: add support for other net types and logic types
+INPUT_DECLARATION -> input _ (%bit _ ) (RANGE _ {%(d) => {return d[0]}%}):? LIST_OF_PORT_IDENTIFIERS  {%function(d) {
     return {Type: "declaration", DeclarationType: "input", Range: d[3], Variables: d[4], Location: d[0].Location};} %}
 
-OUTPUT_DECL -> output _ (%bit _ ) (RANGE _ {%(d) => {return d[0]}%}):? LIST_OF_VARIABLES {%function(d) {
+### TODO: add support for other net types and reg, simplify grammar such output reg also uses variable identifier
+OUTPUT_DECLARATION -> output _ (%bit _ ) (RANGE _ {%(d) => {return d[0]}%}):? LIST_OF_PORT_IDENTIFIERS {%function(d) {
     return {Type: "declaration", DeclarationType: "output", Range: d[3], Variables: d[4], Location: d[0].Location};} %}
 
-LIST_OF_VARIABLES
-    -> NAME_OF_VARIABLE _ %comma _ LIST_OF_VARIABLES {%function(d) {return {Type: "variable_list", Head: d[0], Tail: d[4]};} %}
-    | NAME_OF_VARIABLE {% function(d) {return {Type: "variable_list", Head: d[0], Tail: null};}  %}
+# INOUT_DECLARATION 
+# not implemented, inout not supported
 
+### 2.1.3 Type declarations ###
 
-LIST_OF_VARIABLES2
-    -> IDENTIFIER _ %comma _ LIST_OF_VARIABLES2 {%function(d) {return [d[0]].concat(d[4]) ;} %}
-    | IDENTIFIER {% function(d) {return [d[0]];}  %}
+# bit and logic from SystemVerilog are used, they are handled both as 2 state variable due to issie limitations
+LOGIC_DECLARATION 
+    -> %bit _  (RANGE _ {%(d,l,r) => {return d[0]}%}):? LIST_OF_VARIABLE_IDENTIFIERS _ %semicolon {% (d,l,r) => {
+        return {Type: "declaration", DeclarationType: "internal", Range: d[2], Variables: d[3], Location: d[0].offset};} %}
 
-NAME_OF_VARIABLE -> IDENTIFIER {%function(d) {return {Type: "variable", Name: d[0], Location: d[0].Location};} %}
+# REG_DECLARATION
+# TODO: add support for reg declaration
 
+# NET_DECLARATION
+# TODO: add support for net declaration
+
+#### 2.2 Declaration data types ####
+### 2.2.1 Net and variable types ###
+# TODO: add support with dimension which handles arrays
+VARIABLE_TYPE
+    -> IDENTIFIER {% id %}
+
+### 2.2.2 Strenths ###
+# not implemented, strength not supported
+
+### 2.2.3 Delays ###
+# not implemented, delay not supported
+    
+
+#### 2.3 Declaration lists ####
+# LIST_OF_DEFPARAM_ASSIGNMENTS 
+# used for parameter overrides, not implemented
+
+# LIST_OF_EVENT_IDENTIFIERS
+# not implemented, complex event control not supported
+
+# LIST_OF_NET_DECL_ASSIGNMENTS 
+# declaration of nets with initilization not synthesizable, not implemented
+
+# LIST_OF_NET_IDENTIFIERS # TODO: add support for net declaration
+
+# LIST_OF_PARAM_ASSIGNMENTS # TODO: add support for parameter assignment
+
+LIST_OF_PORT_IDENTIFIERS
+    -> PORT_IDENTIFIER _ %comma _ LIST_OF_PORT_IDENTIFIERS {%function(d) {return {Type: "variable_list", Head: d[0], Tail: d[4]};} %}
+    | PORT_IDENTIFIER {% function(d) {return {Type: "variable_list", Head: d[0], Tail: null};}  %}
+
+# LIST_OF_REAL_IDENTIFIERS
+# not implemented, real and realtime not supported
+
+# LIST_OF_SPECPARAM_IDENTIFIERS
+# not implemented, specparam not supported
+
+LIST_OF_VARIABLE_IDENTIFIERS
+    -> VARIABLE_TYPE _ %comma _ LIST_OF_VARIABLE_IDENTIFIERS {%function(d) {return [d[0]].concat(d[4]) ;} %}
+    | VARIABLE_TYPE {% function(d) {return [d[0]];}  %}
+
+# LIST_OF_VARAIBLE_PORT_IDENTIFIERS
+# token ommitted from simplified output reg grammar, not implemented
+
+#### 2.4 Declaration assignments ####
+
+# PARAM_ASSIGNMENT
+# TODO: add support for parameter assignment
+
+#### 2.5 Declaration ranges ####
+# DIMENSION # TODO: add support for dimension which handles arrays
+
+# TODO; fix this with constant expression and primary
 RANGE -> %lbracket _ UNSIGNED_NUMBER _ %colon _ UNSIGNED_NUMBER _ %rbracket {%function(d,l,reject) {return {Type: "range", Start: d[2], End: d[6], Location: d[0].offset};} %}
 
+# 2.6 Function declarations
+# not implemented, function declaration not supported
+
+# 2.7 Task declarations
+# not implemented, task declaration not supported
+
+# 2.8 Block item declarations
+# not implemented, block item declaration not supported
+# declarations in procedural blocks can be synthesizeable but not always, 
+# often used as loop statement index which tends to be more purposed for simulation
+
+
+
+PORT_IDENTIFIER -> IDENTIFIER {%function(d) {return {Type: "variable", Name: d[0], Location: d[0].Location};} %}
+
+
+
+
+NAME_OF_MODULE -> IDENTIFIER {% id %}
+
+
+
+
+
+
+
+
+
 #### reg declaration #####
-REG_DECLARATION 
-    -> %bit _  (RANGE _ {%(d,l,r) => {return d[0]}%}):? LIST_OF_VARIABLES2 _ %semicolon {% (d,l,r) => {
-        return {Type: "declaration", DeclarationType: "logic", Range: d[2], Variables: d[3], Location: d[0].offset};} %}
+
 ######################################     BEHAVIORAL STATEMENTS    #############################################
 
 ### PROCEDURAL BLOCKS AND ASSIGNMENTS
@@ -296,7 +387,7 @@ CASE_ITEM
 #     #| "@" ps_or_hierarchical_sequence_identifier
 
 
-CONTINUOUS_ASSIGNMENT
+CONTINUOUS_ASSIGN
     -> assign _ ASSIGNMENT _ %semicolon {%function(d) {return {Type: "statement", StatementType: "assign", Assignment: d[2], Location: d[0].Location};} %}
     | logic _ WIRE_ASSIGNMENT _ %semicolon {%function(d) {return {Type: "statement", StatementType: "wire", Assignment: d[2], Location: d[0].Location};} %}
 
@@ -305,7 +396,7 @@ ASSIGNMENT -> L_VALUE _ %op_assign _ EXPRESSION {%function(d) {return {Type: "as
 WIRE_ASSIGNMENT -> WIRE_L_VALUE _ %op_assign _ EXPRESSION {%function(d) {return {Type: "bit", LHS: d[0], RHS: d[4], Location:d[0].Primary.Location };} %} 
 
 ###########################################      MODULE_DECLARATION INSTANTIATION STATEMENTS    #############################
-MODULE_INSTANTIATION_STATEMENT -> IDENTIFIER _ IDENTIFIER _ %lparen _ LIST_OF_PORT_CONNECTIONS _ %rparen _ %semicolon {%(d) => {return {Type: "module_instantiation", Module: d[0], Identifier: d[2], Connections: d[6]}}%}
+MODULE_INSTANTIATION -> IDENTIFIER _ IDENTIFIER _ %lparen _ LIST_OF_PORT_CONNECTIONS _ %rparen _ %semicolon {%(d) => {return {Type: "module_instantiation", Module: d[0], Identifier: d[2], Connections: d[6]}}%}
 
 LIST_OF_PORT_CONNECTIONS ->
         NAMED_PORT_CONNECTION  (_ %comma _ NAMED_PORT_CONNECTION {%(d)=> {return d[3];}%}):* _ {%(d) => {return [d[0]].concat(d[1]);}%}
