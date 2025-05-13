@@ -29,20 +29,20 @@ SOURCE_TEXT -> MODULE_DECLARATION {%function(d) {return {Type: "source_text", Mo
 # two types of module syntax in verilog, the old style and the new style
 # TODO: add support for parameters
 MODULE_DECLARATION 
-    -> _ %module _ NAME_OF_MODULE _ %lparen _ LIST_OF_PORTS _ %rparen _ %semicolon _ (MODULE_ITEM:* {%function(d) {return {Type: "module_declartion", ItemList: d[0]};} %}) %endmodule _ 
-        {%function(d) { return {Type: "module_old", ModuleName: d[3], PortList: d[7], ModuleItems: d[13], EndLocation: d[14].offset}; } %}
+    -> %module MODULE_IDENTIFIER MODULE_PARAMETER_PORT_LIST:? %lparen LIST_OF_PORTS %rparen %semicolon (MODULE_ITEM:* {%function(d) {return {Type: "module_declartion", ItemList: d[0]};} %}) %endmodule 
+        {%function(d) { return {Type: "module_old", ModuleName: d[1], PortList: d[4], ModuleItems: d[7], EndLocation: d[8].offset}; } %}
 
-    | _ %module _ NAME_OF_MODULE _ %lparen _ (LIST_OF_PORT_DECLARATIONS _ {%function(d){return d[0];}%}):? %rparen _ %semicolon _ (NON_PORT_MODULE_ITEM:* {%function(d) {return {Type: "module_declartion", ItemList: d[0]};} %}) %endmodule _ 
-        {%function(d) {return {Type: "module_new", ModuleName: d[3], IOItems: d[7], ModuleItems: d[12], EndLocation: d[13].offset};} %}
+    | %module MODULE_IDENTIFIER MODULE_PARAMETER_PORT_LIST:? %lparen (LIST_OF_PORT_DECLARATIONS {%function(d){return d[0];}%}):? %rparen %semicolon (NON_PORT_MODULE_ITEM:* {%function(d) {return {Type: "module_declartion", ItemList: d[0]};} %}) %endmodule 
+        {%function(d) {return {Type: "module_new", ModuleName: d[1], PortDeclarations: d[4], ModuleItems: d[7], EndLocation: d[8].offset};} %}
 
 # MODULE_KEYWORD
 # token ommitted, macromodule keyword not implemented, only module keyword used for MODULE_DECLARATION
 
 #### 1.3 Module parameters and ports ####
 # TODO: add support for parameters, check this for code generation 
-# MODULE_PARAMETER_PORT_LIST
-#     -> %hash %lparen PARAMETER_DECLARATION (%comma PARAMETER_DECLARATION {%(d) => {return d[1];}%}):* %rparen  {%function(d) {return {Type: "parameter_port_list", ParameterList: [d[2]].concat(d[3])};} %}
-#     | %hash %lparen %rparem {%function(d) {return {Type: "parameter_port_list", ParameterList: null};} %}
+MODULE_PARAMETER_PORT_LIST
+    -> %hash %lparen PARAMETER_DECLARATION (%comma PARAMETER_DECLARATION {%(d) => {return d[1];}%}):* %rparen  
+        {%function(d) {return {Type: "parameter_port_list", ParameterList: [d[2]].concat(d[3])};} %}
 
 # port list token for old style module declaration
 LIST_OF_PORTS
@@ -100,7 +100,7 @@ NON_PORT_MODULE_ITEM
     # | PARAMETER_DECLARATION # TODO: add support for parameter declaration
 
 # PARAMETER_OVERRIDE
-# not implemented, old style of overriding parameters and warned by most synthesis tools
+# not implemented, usually used only in simulation to update parameters without reinstantiating module
 
 #### 1.5 Configuration source text ####
 # Out of scope for project, not implemented
@@ -109,6 +109,9 @@ NON_PORT_MODULE_ITEM
 #### 2.1 Declaration types ####
 ### 2.1.1 Module parameter declaration ###
 # TODO: add support for module parameter declaration
+PARAMETER_DECLARATION # range and signed not supported for parameter
+    -> %parameter LIST_OF_PARAM_ASSIGNMENTS
+        {% function(d) {return {Type: "parameter_declaration", ParameterAssignmentList: d[1]};} %}
 
 ### 2.1.2 Port declarations ###
 
@@ -161,8 +164,10 @@ VARIABLE_TYPE
 
 # LIST_OF_NET_IDENTIFIERS # TODO: add support for net declaration
 
-# LIST_OF_PARAM_ASSIGNMENTS # TODO: add support for parameter assignment
-
+LIST_OF_PARAM_ASSIGNMENTS 
+    -> PARAM_ASSIGNMENT  %comma LIST_OF_PARAM_ASSIGNMENTS {% (d) => {return [d[0]].concat(d[2])} %}
+    | PARAM_ASSIGNMENT {% (d) => {return [d[0]];} %}
+        
 LIST_OF_PORT_IDENTIFIERS
     -> PORT_IDENTIFIER _ %comma _ LIST_OF_PORT_IDENTIFIERS {%function(d) {return {Type: "list_of_port_identifiers", Head: d[0], Tail: d[4]};} %}
     | PORT_IDENTIFIER {% function(d) {return {Type: "list_of_port_identifiers", Head: d[0], Tail: null};}  %}
@@ -182,8 +187,9 @@ LIST_OF_VARIABLE_IDENTIFIERS
 
 #### 2.4 Declaration assignments ####
 
-# PARAM_ASSIGNMENT
-# TODO: add support for parameter assignment
+PARAM_ASSIGNMENT # simplified to constant expression as minmaxtyp not supported
+    -> IDENTIFIER %op_assign CONSTANT_EXPRESSION {% function(d) {return {Type: "param_assignment", ParameterIdentifier: d[0], ParameterRHS:d[2]};} %}
+
 
 #### 2.5 Declaration ranges ####
 # DIMENSION # TODO: add support for dimension which handles arrays

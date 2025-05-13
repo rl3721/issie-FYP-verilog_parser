@@ -80,10 +80,10 @@ const lexer = moo.compile({
 PROGRAM -> MODULE {%function(d) {return {Type: "program", Module: d[0]};} %}
 # _ for optional whitespace, __ for obligatory whitespace
 MODULE 
-    -> _ %module __ NAME_OF_MODULE _ %lparen _ LIST_OF_PORTS _ %rparen _ %semicolon _ MODULE_ITEMS %endmodule _ {%function(d) { return {Type: "module_old", ModuleName: d[3], PortList: d[7], ModuleItems: d[13], EndLocation: d[14].offset}; } %}
-    | _ %module __ NAME_OF_MODULE _ %lparen _ (IO_ITEMS _ {%function(d){return d[0];}%}):? %rparen _ %semicolon _ NON_PORT_MODULE_ITEMS %endmodule _ {%function(d) {return {Type: "module_new", ModuleName: d[3], IOItems: d[7], ModuleItems: d[12], EndLocation: d[13].offset};} %}
+    -> _ %module __ MODULE_IDENTIFIER _ %lparen _ LIST_OF_PORTS _ %rparen _ %semicolon _ MODULE_ITEMS %endmodule _ {%function(d) { return {Type: "module_old", ModuleName: d[3], PortList: d[7], ModuleItems: d[13], EndLocation: d[14].offset}; } %}
+    | _ %module __ MODULE_IDENTIFIER _ %lparen _ (IO_ITEMS _ {%function(d){return d[0];}%}):? %rparen _ %semicolon _ NON_PORT_MODULE_ITEMS %endmodule _ {%function(d) {return {Type: "module_new", ModuleName: d[3], PortDeclarations: d[7], ModuleItems: d[12], EndLocation: d[13].offset};} %}
 
-NAME_OF_MODULE -> IDENTIFIER {% id %}
+MODULE_IDENTIFIER -> IDENTIFIER {% id %}
  
 LIST_OF_PORTS
     -> PORT _ %comma _ LIST_OF_PORTS {%function(d, l, reject) {return {Type: "port_list", Head: d[0], Tail: d[4], Location: d[0].Location};} %}

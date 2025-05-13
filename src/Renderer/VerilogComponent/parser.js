@@ -67,31 +67,26 @@ function getTokenValue(token) {
 export function parseFromFile(source) {
     try {
         const parser = new nearley.Parser(nearley.Grammar.fromCompiled(verilogGrammar));
-        const sourceTrimmed = source.replace(/\s+$/g, '');
-        const sourceTrimmedComments = sourceTrimmed.replace(/\/\/.*$/gm,' '); //\/\*[\s\S]*?\*\/|([^\\:]|^)
-        //console.log(sourceTrimmedComments);
-        parser.feed(sourceTrimmedComments);
+        const constSource = source;
+        parser.feed(constSource);
         let results = parser.results;
 
-        
-        let lines = sourceTrimmedComments.split('\n');
+        // custome missing endmodule case
+        let lines = constSource.split('\n');
         if(!results.length){
-            //console.log("Unexpected end of input")
             let jsonobj = {Line: parseInt(lines.length), Col: parseInt(0), Length: 2, Message: `Unexpected end of input. Missing endmodule?`};
             return JSON.stringify({Result: null, NewLinesIndex: null, Error: JSON.stringify(jsonobj)});
         }
 
+        // stores the index of new line character in a list
         let linesIndex = [0];
         let count=0;
         for(let i=0;i<lines.length-1;i++){
             linesIndex.push(lines[i].length+1+count);
             count = lines[i].length+1+count;
         }
-        linesIndex.push(sourceTrimmedComments.length) 
+        linesIndex.push(constSource.length) 
         const ast = results[0];
-        //console.log(results.length);
-        //console.log(JSON.stringify(ast)); 
-        //console.log(JSON.stringify(results[1]));
         return JSON.stringify({Result: JSON.stringify(ast), Error: null, NewLinesIndex: linesIndex});
     }
     catch(e) {
@@ -144,7 +139,7 @@ export function parseFromFile(source) {
 //      similarly for IO declarations where we can have "input a,b,c;"
 
 // 2. new- style grammar(IO declarations in module header)
-//      as above for IO declarations in module header
+//      as above for Port declarations in module header
 //          ex: (
 //          input a,b,
 //          input [3:0] c,
@@ -213,7 +208,7 @@ export function fix(json_data) {
 
         ////////  fix IO Declaration list  ////////
 
-        var io_list = obj.Module.IOItems;
+        var io_list = obj.Module.PortDeclarations;
         var IOs = [];
 
         try {
@@ -272,16 +267,9 @@ export function fix(json_data) {
         obj.Module.PortList = ports
         obj.Module.Locations = loc
 
-        // delete IOItems element from JSON obj as it doesn't exist in the old-grammar case
-        delete obj.Module["IOItems"];
+        // delete PortDeclarations element from JSON obj as it doesn't exist in the old-grammar case
+        delete obj.Module["PortDeclarations"];
         //console.log(JSON.stringify(obj));
         return JSON.stringify(obj);
     }
 }
-
-// module.exports = {
-//   parseFromFile,
-//   fix
-// }
-
-// export {parseFromFile, fix}

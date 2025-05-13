@@ -22,6 +22,7 @@ const lexer = moo.compile({
     //hexBase: "'h",
     //binaryBase: "'b",
     // decimalBase: "'d",
+    hash: '#',
     lparen: '(',
     rparen: ')',
     semicolon: ';',
@@ -55,7 +56,7 @@ const lexer = moo.compile({
         endmodule: "endmodule",
         input: 'input',
         output: 'output',
-        //parameter: 'parameter',
+        parameter: 'parameter',
         assign: 'assign',
         bit: 'bit',
         always_comb: 'always_comb',
@@ -67,7 +68,7 @@ const lexer = moo.compile({
         t_else: 'else',
         t_case: 'case',
         t_endcase: 'endcase',
-        t_default: 'default'
+        t_default: 'default',
       })},
     ws: {match: /[\s]/, lineBreaks: true},
     comment: /\/\/.*$/,  // Single line comment

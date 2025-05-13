@@ -38,8 +38,7 @@ type RangeT = {Type: string; Start: string; End: string; Location: int}
 
 type IOItemT = {Type: string; DeclarationType: string; Range : RangeT option; Variables: IdentifierT array; Location: int}
 
-type ParameterT = {Type: string; Identifier: IdentifierT; RHS: NumberT}
-type ParameterItemT = {Type: string; DeclarationType: string; Parameter : ParameterT;}
+
 
 type PrimaryT = {Type: string; PrimaryType: string; BitsStart: string option; BitsEnd: string option; Primary: IdentifierT; Width: int option}
 
@@ -75,11 +74,20 @@ type NamedPortConnectionT = {Type: string; PortId: IdentifierT; Primary: Primary
 
 type ModuleInstantiationT = {Type: string; Module: IdentifierT; Identifier: IdentifierT; Connections: NamedPortConnectionT array}
 
+type ParameterT = {Type: string; Identifier: IdentifierT; RHS: NumberT}
+type ParameterItemT = {Type: string; DeclarationType: string; Parameter : ParameterT;}
+
 type ItemT = {Type: string; ItemType: string; IODecl: IOItemT option; Decl: DeclarationT option; ParamDecl: ParameterItemT option; Statement: ContinuousAssignT option; AlwaysConstruct: AlwaysConstructT option; ModuleInstantiation: ModuleInstantiationT option; Location: int}
 
 type ModuleItemsT = {Type : string; ItemList : ItemT array}
 
-type ModuleT = {Type : string; ModuleName : IdentifierT; PortList : string array; Locations: string array; ModuleItems : ModuleItemsT; EndLocation: int;}
+
+
+type ParameterAssignmentT = {Type: string; ParameterIdentifier: string; ParameterRHS: ExpressionT}
+type ParameterDeclarationT = {Type:string; ParameterAssignmentList: ParameterAssignmentT list}
+type ParameterListT = {Type: string; ParameterList: ParameterDeclarationT list}
+
+type ModuleT = {Type : string; ModuleName : IdentifierT; ParameterList: ParameterListT option; PortList : string array; Locations: string array; ModuleItems : ModuleItemsT; EndLocation: int;}
 
 type VerilogInput = { Type:string; Module: ModuleT; }
 

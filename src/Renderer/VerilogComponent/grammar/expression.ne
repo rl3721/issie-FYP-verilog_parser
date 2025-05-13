@@ -138,18 +138,6 @@ UNARY_OPERATOR -> %lnot {%(d)=>{return d[0].value}%}  | %and {%(d)=>{return d[0]
 MULTIPLICATION_OPERATOR -> %mult {%(d)=>{return d[0].value}%} 
 
 #### 8.7 Numbers ####
-#
-# NUMBER
-#     -> %unsigned_number ALL_NUMERIC {%function(d,l,reject) {
-#         let num = d[1].slice(2);
-#         return {Type: "number", NumberType: "all", Bits: d[0].value, Base: "'h", UnsignedNumber: null, AllNumber: num, Location: d[0].offset};
-#         } %}
-#     | %unsigned_number BINARY_NUMBER {%function(d,l,reject) {
-#         let num = d[1].slice(2);
-#         return {Type: "number", NumberType: "all", Bits: d[0].value, Base: "'b", UnsignedNumber: null, AllNumber: num, Location: d[0].offset};
-#         } %}
-#     | %unsigned_number %decimalBase UNSIGNED_NUMBER {%function(d,l,reject) {return {Type: "number", NumberType: "all", Bits: d[0].value, Base: "'d", UnsignedNumber: null, AllNumber: d[2], Location: d[0].offset};} %}
-   
    
 NUMBER
     -> HEX_NUMBER {% id %}
@@ -188,15 +176,8 @@ DECIMAL_NUMBER
     #     return {Type: "number", NumberType: "decimal", Bits: null, Base: null, UnsignedNumber: d[0].value, AllNumber: null, Location: d[0].offset};
     #     } %}
 
+# TODO: remove this after sorting constant expression
 UNSIGNED_NUMBER -> %unsigned_number {%(d)=>{return d[0].value}%}
-
-
-
-#HEX_DIGIT -> %binary {%d => {return d[0].value}%} | %unsigned_number {%d => { return d[0].value}%}  | %all_numeric {%d => {return d.value}%}
-#DECIMAL_DIGIT -> %unsigned_number {%d => { return d[0].value}%} | %binary {%d => {return d[0].value}%}
-#BINARY_DIGIT -> %binary {%d => {return d[0].value}%}
-
-#BASE -> "'b" | "'h" {% id %}
 
 
 
@@ -232,4 +213,4 @@ _ -> %ws:*
 
 PORT_IDENTIFIER -> IDENTIFIER {%function(d) {return {Type: "port_identifier", Name: d[0], Location: d[0].Location};} %}
 
-NAME_OF_MODULE -> IDENTIFIER {% id %}
+MODULE_IDENTIFIER -> IDENTIFIER {% id %}
