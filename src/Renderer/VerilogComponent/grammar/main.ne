@@ -5,8 +5,8 @@
 
 @include "./lexer.ne"
 @include "./statement.ne"
+@include "./expression.ne"
 
-# Pass your lexer object using the @lexer option:
 @lexer lexer
 
 ############### GRAMMAR FOR VERILOG 2005 ####################
@@ -113,12 +113,12 @@ NON_PORT_MODULE_ITEM
 ### 2.1.2 Port declarations ###
 
 ### TODO: add support for other net types and logic types
-INPUT_DECLARATION -> input _ (%bit _ ) (RANGE _ {%(d) => {return d[0]}%}):? LIST_OF_PORT_IDENTIFIERS  {%function(d) {
-    return {Type: "declaration", DeclarationType: "input", Range: d[3], Variables: d[4], Location: d[0].Location};} %}
+INPUT_DECLARATION -> %input _ (%bit _ ) (RANGE _ {%(d) => {return d[0]}%}):? LIST_OF_PORT_IDENTIFIERS  {%function(d) {
+    return {Type: "declaration", DeclarationType: "input", Range: d[3], Variables: d[4], Location: d[0].offset};} %}
 
 ### TODO: add support for other net types and reg, simplify grammar such output reg also uses variable identifier
-OUTPUT_DECLARATION -> output _ (%bit _ ) (RANGE _ {%(d) => {return d[0]}%}):? LIST_OF_PORT_IDENTIFIERS {%function(d) {
-    return {Type: "declaration", DeclarationType: "output", Range: d[3], Variables: d[4], Location: d[0].Location};} %}
+OUTPUT_DECLARATION -> %output _ (%bit _ ) (RANGE _ {%(d) => {return d[0]}%}):? LIST_OF_PORT_IDENTIFIERS {%function(d) {
+    return {Type: "declaration", DeclarationType: "output", Range: d[3], Variables: d[4], Location: d[0].offset};} %}
 
 # INOUT_DECLARATION 
 # not implemented, inout not supported

@@ -227,7 +227,7 @@ COMPLETE_STATEMENT
             return {Type: "statement", StatementType: "blocking_assignment", NonBlockingAssign: null, BlockingAssign: assignment, SeqBlock: null, Conditional: null,  CaseStatement: null, Location: d[0].Location};
         } %}
     | SEQ_BLOCK {%function(d,l,reject) {return {Type: "statement", StatementType: "seq_block", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: d[0], Conditional: null,  CaseStatement: null, Location: d[0].Location};} %} #change to statements?
-    | CASE_STATEMENT {%function(d,l,reject) {return {Type: "statement", StatementType: "case_stmt", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: null,  CaseStatement: d[0], Location: d[0].Location};}%}
+    | CASE_STATEMENT {%function(d,l,reject) {return {Type: "statement", StatementType: "case_statement", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: null,  CaseStatement: d[0], Location: d[0].Location};}%}
 
 COMPLETE_CONDITIONAL_STATEMENT 
     -> %t_if _ %lparen _ EXPRESSION _ %rparen _ COMPLETE_STATEMENT  %t_else __ COMPLETE_STATEMENT {% function(d) {
@@ -272,12 +272,12 @@ STATEMENT2
         } %}
     | SEQ_BLOCK {%function(d,l,reject) {return {Type: "statement", StatementType: "seq_block", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: d[0], Conditional: null,  CaseStatement: null, Location: d[0].Location};} %} #change to statements?
     | CONDITIONAL_STATEMENT {%function(d,l,reject) {return {Type: "statement", StatementType: "conditional", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: d[0],  CaseStatement: null, Location: d[0].Location};}%}
-    | CASE_STATEMENT {%function(d,l,reject) {return {Type: "statement", StatementType: "case_stmt", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: null,  CaseStatement: d[0], Location: d[0].Location};}%}
+    | CASE_STATEMENT {%function(d,l,reject) {return {Type: "statement", StatementType: "case_statement", NonBlockingAssign: null, BlockingAssign: null, SeqBlock: null, Conditional: null,  CaseStatement: d[0], Location: d[0].Location};}%}
 
 ################# CASE STATEMENTS ###################
 CASE_STATEMENT # probs only care about first one
     -> %t_case _ %lparen _ EXPRESSION _ %rparen _ (CASE_ITEM {% id %}):+  DEFAULT:? %t_endcase __ {%function(d) { 
-        return {Type: "case_stmt", Expression: d[4], CaseItems: d[8], Default: d[9], Location: d[0].offset};}%}
+        return {Type: "case_statement", Expression: d[4], CaseItems: d[8], Default: d[9], Location: d[0].offset};}%}
     #| CASE_KEYWORD (case_expression ) "matches" case_pattern_item { case_pattern_item } endcase
     #|  "case" ( case_expression ) "inside"
     #   case_inside_item { case_inside_item } endcase
