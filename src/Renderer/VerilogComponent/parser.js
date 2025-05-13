@@ -125,41 +125,34 @@ export function parseFromFile(source) {
     }
 }
 
-// function used to fix the json produced by the nearley parser
-// two cases:
-// 1. old-style grammar (ports as names in module header, IO declaration in body)
-//      port list is:
-//
-//      LIST_OF_PORTS
-//          -> PORT _ "," _ LIST_OF_PORTS {% function (d, l, reject) { return { Type: "port_list", Head: d[0], Tail: d[4], Location: l }; } %}
-//          | PORT {% function (d, l, reject) { return { Type: "port_list", Head: d[0], Tail: null, Location: l }; } %}
-//
-//      analyses the above and returns a list of all ports
-//
-//      similarly for IO declarations where we can have "input a,b,c;"
-
-// 2. new- style grammar(IO declarations in module header)
-//      as above for Port declarations in module header
-//          ex: (
-//          input a,b,
-//          input [3:0] c,
-//          output c,
-//          )
-//
-//      and then move all IODecl in ItemList (with statements) and create a 'fake' port list with all names from IODecls
-//      so that the rest of the code (errorCheck.fs, SheetCreator.fs) can work as for old-style grammar
-
+/// function used to fix the json produced by the nearley parser which adjust AST from the new style grammar to that of equivalent old style
+/// two cases:
+/// 1. old-style grammar (ports as names in module header, IO declaration in body)
+///      port list is:
+///      LIST_OF_PORTS
+///          -> PORT _ "," _ LIST_OF_PORTS {% function (d, l, reject) { return { Type: "port_list", Head: d[0], Tail: d[4], Location: l }; } %}
+///          | PORT {% function (d, l, reject) { return { Type: "port_list", Head: d[0], Tail: null, Location: l }; } %}
+///     analyses the above and returns a list of all ports
+///      similarly for IO declarations where we can have "input a,b,c;"
+/// 2. new- style grammar(IO declarations in module header)
+///      as above for Port declarations in module header
+///          ex: (
+///          input a,b,
+///          input [3:0] c,
+///          output c,
+///         )
+///      and then move all IODecl in ItemList (with statements) and create a 'fake' port list with all names from IODecls
+///      so that the rest of the code (errorCheck.fs, SheetCreator.fs) can work as for old-style grammar
+/// Similar approach is completed with the different styles of creating parameters
 export function fix(json_data) {
     var obj = JSON.parse(json_data);
-    //console.log(obj.Module.EndLocation);
-    if (obj.Module.Type == "module_old") {
 
+    // Step 1: fix the AST with port, change port_declaration_list to port_list if neccessary
+    if (obj.Module.Type == "module_old") { //CASE 1: old style with port_list
         ////////  fix port list  ////////  
-
         var port_list = obj.Module.PortList;
         var ports = [];
         var loc = [];
-
         try {
             while (port_list.Tail != null) {
                 ports.push(port_list.Head.Port.Name);
@@ -171,15 +164,10 @@ export function fix(json_data) {
         } catch (e) {
             console.log(e.message);
         }
-
         obj.Module.PortList = ports
         obj.Module.Locations = loc
-
-
         ////////  fix IO Declarations  ////////
-
         var item_list = obj.Module.ModuleItems.ItemList;
-
         var temp_var = [];
 
         try {
@@ -200,17 +188,13 @@ export function fix(json_data) {
         }
 
         obj.Module.ModuleItems.ItemList = item_list
-        return JSON.stringify(obj);
+        
     }
-
     // CASE: new-grammar
     else {
-
         ////////  fix IO Declaration list  ////////
-
         var io_list = obj.Module.PortDeclarations;
         var IOs = [];
-
         try {
             while (io_list.Tail != null) {
                 IOs.push(io_list.Head);
@@ -220,13 +204,9 @@ export function fix(json_data) {
         } catch (e) {
             console.log(e.message);
         }
-
         var io_list = IOs;
-
         ////////  get IO Declaration variables to a list  ////////
-
         var temp_var = [];
-
         try {
             for (let i = 0; i < io_list.length; i++) {
                 if ((io_list[i].ItemType == "input_declaration") | (io_list[i].ItemType == "output_declaration" )) {
@@ -243,16 +223,11 @@ export function fix(json_data) {
         } catch (e) {
             console.log(e.message);
         }
-
         var statement_list = obj.Module.ModuleItems.ItemList;
-
         obj.Module.ModuleItems.ItemList = io_list.concat(statement_list);
-
         ////////  create a "fake" PortList element  ////////
-
         var ports = [];
         var loc = [];
-
         try {
             for (let i = 0; i < io_list.length; i++) {
                 for (let j = 0; j < io_list[i].IODecl.Variables.length; j++) {
@@ -263,13 +238,35 @@ export function fix(json_data) {
         } catch (e) {
             console.log(e.message);
         }
-
         obj.Module.PortList = ports
         obj.Module.Locations = loc
-
         // delete PortDeclarations element from JSON obj as it doesn't exist in the old-grammar case
         delete obj.Module["PortDeclarations"];
         //console.log(JSON.stringify(obj));
-        return JSON.stringify(obj);
     }
+
+    // Step 2: put change style of parameters
+    if (obj.Module.ParameterList){
+        var paramerter_declaration_list = obj.Module.ParameterList;
+        var parameter_item_list = []
+        try {
+            for (let i = 0; i < paramerter_declaration_list.length; i++) {
+                    let declaration = paramerter_declaration_list[i];
+                    parameter_item_list.push(
+                            {Type:"module_item", 
+                            ItemType: "parameter_declaration", 
+                            ParamDecl: declaration, 
+                            Location: declaration.Location}
+                    )
+                console.log(declaration);
+                }
+            }
+        catch (e) {
+            console.log(e.message);
+        }
+        var statement_list = obj.Module.ModuleItems.ItemList;
+        obj.Module.ModuleItems.ItemList = parameter_item_list.concat(statement_list);
+        console.log('debug');
+    }
+    return JSON.stringify(obj);
 }

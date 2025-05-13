@@ -30,10 +30,20 @@ SOURCE_TEXT -> MODULE_DECLARATION {%function(d) {return {Type: "source_text", Mo
 # TODO: add support for parameters
 MODULE_DECLARATION 
     -> %module MODULE_IDENTIFIER MODULE_PARAMETER_PORT_LIST:? %lparen LIST_OF_PORTS %rparen %semicolon (MODULE_ITEM:* {%function(d) {return {Type: "module_declartion", ItemList: d[0]};} %}) %endmodule 
-        {%function(d) { return {Type: "module_old", ModuleName: d[1], PortList: d[4], ModuleItems: d[7], EndLocation: d[8].offset}; } %}
+        {%function(d) { return {Type: "module_old", 
+                                ModuleName: d[1], 
+                                ParameterList: d[2], // actually not part of final AST, processed in later step into module items
+                                PortList: d[4], 
+                                ModuleItems: d[7], 
+                                EndLocation: d[8].offset}; } %}
 
     | %module MODULE_IDENTIFIER MODULE_PARAMETER_PORT_LIST:? %lparen (LIST_OF_PORT_DECLARATIONS {%function(d){return d[0];}%}):? %rparen %semicolon (NON_PORT_MODULE_ITEM:* {%function(d) {return {Type: "module_declartion", ItemList: d[0]};} %}) %endmodule 
-        {%function(d) {return {Type: "module_new", ModuleName: d[1], PortDeclarations: d[4], ModuleItems: d[7], EndLocation: d[8].offset};} %}
+        {%function(d) {return {Type: "module_new", 
+                                ModuleName: d[1], 
+                                ParameterList: d[2], // actually not part of final AST, processed in later step into module items
+                                PortDeclarations: d[4], // actually not part of final AST, processed in later step into module items
+                                ModuleItems: d[7], 
+                                EndLocation: d[8].offset};} %}
 
 # MODULE_KEYWORD
 # token ommitted, macromodule keyword not implemented, only module keyword used for MODULE_DECLARATION
@@ -42,7 +52,7 @@ MODULE_DECLARATION
 # TODO: add support for parameters, check this for code generation 
 MODULE_PARAMETER_PORT_LIST
     -> %hash %lparen PARAMETER_DECLARATION (%comma PARAMETER_DECLARATION {%(d) => {return d[1];}%}):* %rparen  
-        {%function(d) {return {Type: "parameter_port_list", ParameterList: [d[2]].concat(d[3])};} %}
+        {%function(d) {return [d[2]].concat(d[3])} %}
 
 # port list token for old style module declaration
 LIST_OF_PORTS
@@ -97,7 +107,8 @@ MODULE_OR_GENERATE_IETM_DECLARATION
 NON_PORT_MODULE_ITEM
     -> MODULE_OR_GENERATE_ITEM {% id %}
     # | GENERATE_REGION # TODO: add support for generate region
-    # | PARAMETER_DECLARATION # TODO: add support for parameter declaration
+    | PARAMETER_DECLARATION %semicolon #{% (d) => {return d[0];} %}
+    {% (d) => {return {Type:"module_item", ItemType: "parameter_declaration", ParamDecl: d[0], Location: d[0].Location};}%}
 
 # PARAMETER_OVERRIDE
 # not implemented, usually used only in simulation to update parameters without reinstantiating module
@@ -111,7 +122,8 @@ NON_PORT_MODULE_ITEM
 # TODO: add support for module parameter declaration
 PARAMETER_DECLARATION # range and signed not supported for parameter
     -> %parameter LIST_OF_PARAM_ASSIGNMENTS
-        {% function(d) {return {Type: "parameter_declaration", ParameterAssignmentList: d[1]};} %}
+        # {% (d) => {return 123} %}
+        {% function(d) {return {Type: "parameter_declaration", ParameterAssignmentList: d[1], Location: d[0].offset};} %}
 
 ### 2.1.2 Port declarations ###
 

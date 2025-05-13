@@ -10,7 +10,7 @@ open VerilogTypes
 
 type ItemDU =
     | IOItem of IOItemT
-    | ParamDecl of ParameterItemT
+    | ParamDecl of ParameterDeclarationT
     | ContinuousAssign of ContinuousAssignT
     | AlwaysConstruct of AlwaysConstructT
 
@@ -24,7 +24,7 @@ type StatementDU =
 // should I add everything in here?
 type ASTNode =
     | IOItem of IOItemT
-    | ParamDecl of ParameterItemT
+    | ParamDecl of ParameterDeclarationT
     | ContinuousAssign of ContinuousAssignT
     | Declaration of DeclarationT
     | AlwaysConstruct of AlwaysConstructT
@@ -40,8 +40,8 @@ type ASTNode =
     | AssignmentLHS of AssignmentLHST
     | Expression of ExpressionT
     | Primary of PrimaryT
-    | ParameterItem of ParameterItemT
-    | Parameter of ParameterT
+    | ParameterDeclaration of ParameterDeclarationT
+    // | Parameter of ParameterT //TODO: remove this hostorical type and figure out how to implement new type
     | Range of RangeT
     | Number of NumberT
     | Item of ItemT

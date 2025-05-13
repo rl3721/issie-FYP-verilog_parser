@@ -74,20 +74,26 @@ type NamedPortConnectionT = {Type: string; PortId: IdentifierT; Primary: Primary
 
 type ModuleInstantiationT = {Type: string; Module: IdentifierT; Identifier: IdentifierT; Connections: NamedPortConnectionT array}
 
-type ParameterT = {Type: string; Identifier: IdentifierT; RHS: NumberT}
-type ParameterItemT = {Type: string; DeclarationType: string; Parameter : ParameterT;}
+type ParameterAssignmentT = {Type: string; ParameterIdentifier: IdentifierT; ParameterRHS: ExpressionT}
+type ParameterDeclarationT = {Type:string; ParameterAssignmentList: ParameterAssignmentT list}
 
-type ItemT = {Type: string; ItemType: string; IODecl: IOItemT option; Decl: DeclarationT option; ParamDecl: ParameterItemT option; Statement: ContinuousAssignT option; AlwaysConstruct: AlwaysConstructT option; ModuleInstantiation: ModuleInstantiationT option; Location: int}
+/// The AST type for various types of module items, different fields are dilled accordingly
+type ItemT =    {Type: string; 
+                ItemType: string; 
+                IODecl: IOItemT option; 
+                Decl: DeclarationT option; 
+                ParamDecl: ParameterDeclarationT option; 
+                Statement: ContinuousAssignT option; 
+                AlwaysConstruct: AlwaysConstructT option; 
+                ModuleInstantiation: ModuleInstantiationT option; 
+                Location: int}
 
 type ModuleItemsT = {Type : string; ItemList : ItemT array}
 
 
 
-type ParameterAssignmentT = {Type: string; ParameterIdentifier: string; ParameterRHS: ExpressionT}
-type ParameterDeclarationT = {Type:string; ParameterAssignmentList: ParameterAssignmentT list}
-type ParameterListT = {Type: string; ParameterList: ParameterDeclarationT list}
 
-type ModuleT = {Type : string; ModuleName : IdentifierT; ParameterList: ParameterListT option; PortList : string array; Locations: string array; ModuleItems : ModuleItemsT; EndLocation: int;}
+type ModuleT = {Type : string; ModuleName : IdentifierT; PortList : string array; Locations: string array; ModuleItems : ModuleItemsT; EndLocation: int;}
 
 type VerilogInput = { Type:string; Module: ModuleT; }
 
