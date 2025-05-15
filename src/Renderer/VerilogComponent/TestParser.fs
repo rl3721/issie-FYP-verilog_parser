@@ -31,6 +31,7 @@ open NearleyBindings
 open FSharp.Core
 open TimeHelpers
 open GraphMerger
+open ParameterTypes
 
 importGrammar
 importParser
@@ -168,7 +169,12 @@ type PortInfo = {Label: string; Width: int}
 type Input = {Inputs:codegenInput List; Outputs: PortInfo List; IsClocked: bool; ModuleName: string}
 
 let simulateAST ast src dst loadedComps=
-    let cs = createSheet ast {project with LoadedComponents=loadedComps}
+
+    let SheetCreatorOutput = createSheet ast {project with LoadedComponents=loadedComps}
+    let cs: Component list * List<Connection> = SheetCreatorOutput.CState
+
+    //TODO: add parameter test to the rest of it
+
     // generate list of loaded components, then do the same for top level component
     let (loadedComp: LoadedComponent), _ = makeLoadedComponentFromCanvasData cs "" System.DateTime.MinValue None None
     let inputValuesFile = pathJoin [|(dirName src); (baseNameWithoutExtension src) + ".json"|]
@@ -312,13 +318,17 @@ let runCodeGenTests _ =
                 ||> List.fold (fun comps file ->
                     printfn $"{comps}, {file}"
                     let ast, linesIndex = parseFile file dst
-                    let cs =
+                    let createSheetOutput =
                         match getSemanticErrors ast linesIndex with
                         | [] -> createSheet ast {project with LoadedComponents=comps}
                         | _ -> 
                             printfn $"[TEST] couldn't parse input {baseNameWithoutExtension file}"
-                            [],[]
+                            {|
+                                CState=[],[]
+                                paramBindings=Map.empty
+                            |}
                     
+                    let cs = createSheetOutput.CState
                     let lc, _ = makeLoadedComponentFromCanvasData cs ast.Module.ModuleName.Name System.DateTime.MinValue None None
                     comps@[lc]
                 )
@@ -649,7 +659,8 @@ let runPerformanceTests () =
             let fixedAST = fix parse
             let ast = Json.parseAs<VerilogInput> fixedAST
             let errorCheckEnd = getTimeMs()
-            let cs = createSheet ast dummyProject
+            let createSheetOutput = createSheet ast dummyProject
+            let cs = createSheetOutput.CState
             let synthesisEnd = getTimeMs ()
             (List.length (fst cs), synthesisEnd-errorCheckEnd)
         )

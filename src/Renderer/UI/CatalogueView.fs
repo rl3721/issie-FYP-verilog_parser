@@ -652,11 +652,22 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                 let fixedAST = fix result
                 let parsedAST = fixedAST |> Json.parseAs<VerilogInput>
 
-                let cs = SheetCreator.createSheet parsedAST project
+
+                let SheetCreatorOutput = SheetCreator.createSheet parsedAST project
+                let cs = SheetCreatorOutput.CState
+                
+                // Creating parameter_defs type for the sheet
+                let param_bindings: ParamBindings = SheetCreatorOutput.paramBindings
+                let component_slot_expr:ComponentSlotExpr = Map.ofList []
+                let parameter_defs: ParameterDefs = {
+                    DefaultBindings = param_bindings
+                    ParamSlots = component_slot_expr
+                }
+
                 let toSaveCanvasState = Helpers.JsonHelpers.stateToJsonString (cs, None, Some {
                                 Form = Some (Verilog name);
                                 Description=None;
-                                ParameterDefinitions = None})
+                                ParameterDefinitions = Some parameter_defs}) //TODO: add parameter to this
 
                 match writeFile path2 toSaveCanvasState with
                 | Ok _ -> 
@@ -688,11 +699,15 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                 let result = Option.get output.Result
                 let fixedAST = fix result
                 let parsedAST = fixedAST |> Json.parseAs<VerilogInput>
-                let newCS = SheetCreator.createSheet parsedAST project
+                let SheetCreatorOutput = SheetCreator.createSheet parsedAST project
+                let newCS: Component list * List<Connection> = SheetCreatorOutput.CState
 
-                dispatch (StartUICmd SaveSheet)               
+                // TODO: update parameter as well
+                dispatch (StartUICmd SaveSheet) 
                 updateVerilogFileActionWithModelUpdate newCS name model dispatch |> ignore
+                failwithf "Point B" 
                 dispatch <| Sheet(SheetT.DoNothing)
+
 
 
     let compile =

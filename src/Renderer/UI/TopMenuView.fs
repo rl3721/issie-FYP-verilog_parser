@@ -84,6 +84,7 @@ let updateVerilogFileActionWithModelUpdate (newCS:CanvasState) name (model: Mode
     let opt = updateVerilogFileAction newCS name model' dispatch
     let ldcOpt = Option.map fst opt
     let state = Option.map snd opt |> Option.defaultValue ([],[])
+
     match model'.CurrentProj with
     | None -> failwithf "What? Should never be able to save sheet when project=None"
     | Some p -> 
@@ -91,8 +92,11 @@ let updateVerilogFileActionWithModelUpdate (newCS:CanvasState) name (model: Mode
         updateLdCompsWithCompOpt ldcOpt p.LoadedComponents
         |> (fun lc -> {p with LoadedComponents=lc})
         |> SetProject
+        |> failwithf "point 12"
         |> dispatch
 
+
+    failwithf "point 13"
     let p'' =
         match model'.CurrentProj with
         | None -> failwithf "What? Should never be able to save sheet when project=None"
@@ -100,6 +104,7 @@ let updateVerilogFileActionWithModelUpdate (newCS:CanvasState) name (model: Mode
             // update loaded components for saved file
             updateLdCompsWithCompOpt ldcOpt p.LoadedComponents
             |> (fun lc -> {p with LoadedComponents=lc})
+
 
     SetHasUnsavedChanges false
     |> JSDiagramMsg

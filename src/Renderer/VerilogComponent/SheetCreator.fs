@@ -8,6 +8,7 @@ open NumberHelpers
 open VerilogAST
 open ErrorCheck
 open ErrorCheckHelpers
+open ParameterTypes
 /////// TYPES ////////
 
 type Circuit = {
@@ -1348,11 +1349,20 @@ let compileModule (node: ASTNode) (varToCompMap: Map<string,Component>) (ioToCom
         | _ -> currCircuits
     let res = compileModule node varToCompMap initialCircuits // pass in everything set to 0 or flip flop output
     res
+
+let getParamBindings (items: ItemT list)= 
+    let param_bindings = Map.ofList [(ParamName "WIDTH", PInt 1)]
+    param_bindings
+
 /////////   MAIN FUNCTION   //////////
 
 let createSheet input (project:Project)= 
     let items = input.Module.ModuleItems.ItemList |> Array.toList
     let ioDecls = items |> List.filter (fun item -> Option.isSome item.IODecl)
+    let parameterDecls = items |> List.filter (fun item -> Option.isSome item.ParamDecl)
+    let paramBindings = getParamBindings parameterDecls
+
+
     let assignments = items |> List.filter (fun item -> Option.isSome item.Statement) 
     let wiresLHS = collectWiresLHS assignments // get declarations too
     let ioToCompMap = 
@@ -1466,7 +1476,10 @@ let createSheet input (project:Project)=
     let finalCanvasState = 
         (components, snd finalCanvasState)
         |> fixCanvasState
-    finalCanvasState
+    {|
+        CState = finalCanvasState
+        paramBindings = paramBindings
+    |}
 
 
 // 1. create wire label for every variable and port maybe bit by bit?? shouldn't be bit by bit because performance
