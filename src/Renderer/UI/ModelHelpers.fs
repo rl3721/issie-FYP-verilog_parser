@@ -244,9 +244,11 @@ let updateLdCompsWithCompOpt (newCompOpt:LoadedComponent option) (ldComps: Loade
     match newCompOpt with 
     | None -> ldComps // no update
     | Some newComp -> 
+        
         match List.tryFind (fun (ldc:LoadedComponent) -> ldc.Name = newComp.Name) ldComps with
         | None -> newComp :: ldComps
         | Some _ -> updateLdComps newComp.Name (fun _ -> newComp) ldComps
+        
 
 /// returns a string option representing the current file name if file is loaded, otherwise None
 let getCurrFile (model: Model) =

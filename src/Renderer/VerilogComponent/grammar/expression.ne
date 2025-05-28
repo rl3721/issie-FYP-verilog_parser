@@ -19,7 +19,7 @@ LIST_OF_UNARIES
 #### Expressions
 # TODO: sort out this
 CONSTANT_EXPRESSION
-    -> EXPRESSION {%function(d) {return {Type:"constant_expression", Expression: d[0]};} %}
+    -> EXPRESSION {% function(d) {return{Type: "constant_expression", ConstantExpression: d[0]}} %}
 
 EXPRESSION -> CONDITIONAL {% id %}
 

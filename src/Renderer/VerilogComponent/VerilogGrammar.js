@@ -99,7 +99,7 @@ var grammar = {
     {"name": "CONCATENATIONS", "symbols": [(lexer.has("lbrace") ? {type: "lbrace"} : lbrace), "_", "LIST_OF_UNARIES", "_", (lexer.has("rbrace") ? {type: "rbrace"} : rbrace)], "postprocess": function(d) {return {Type: "concat", Primary: null, Number: null, Expression: d[2]};}},
     {"name": "LIST_OF_UNARIES", "symbols": ["EXPRESSION", "_", (lexer.has("comma") ? {type: "comma"} : comma), "_", "LIST_OF_UNARIES"], "postprocess": function(d) {return {Type: "unary_list", Head : d[0], Tail: d[4]};}},
     {"name": "LIST_OF_UNARIES", "symbols": ["EXPRESSION"], "postprocess": function(d) {return {Type: "unary_list", Head: d[0], Tail: null};}},
-    {"name": "CONSTANT_EXPRESSION", "symbols": ["EXPRESSION"], "postprocess": function(d) {return {Type:"constant_expression", Expression: d[0]};}},
+    {"name": "CONSTANT_EXPRESSION", "symbols": ["EXPRESSION"], "postprocess": function(d) {return{Type: "constant_expression", ConstantExpression: d[0]}}},
     {"name": "EXPRESSION", "symbols": ["CONDITIONAL"], "postprocess": id},
     {"name": "CONDITIONAL", "symbols": ["LOGICAL_OR", "_", (lexer.has("question") ? {type: "question"} : question), "_", "CONDITIONAL_RESULT"], "postprocess": function(d) {return {Type: "conditional_cond", Operator:d[2].value, Head: d[0], Tail: d[4]};}},
     {"name": "CONDITIONAL", "symbols": ["LOGICAL_OR"], "postprocess": id},

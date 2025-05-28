@@ -92,23 +92,27 @@ let updateVerilogFileActionWithModelUpdate (newCS:CanvasState) name (model: Mode
         updateLdCompsWithCompOpt ldcOpt p.LoadedComponents
         |> (fun lc -> {p with LoadedComponents=lc})
         |> SetProject
-        |> failwithf "point 12"
         |> dispatch
 
+    // printfn "print 14"
 
-    failwithf "point 13"
     let p'' =
         match model'.CurrentProj with
         | None -> failwithf "What? Should never be able to save sheet when project=None"
         | Some p -> 
             // update loaded components for saved file
+            // printfn "print 15"
             updateLdCompsWithCompOpt ldcOpt p.LoadedComponents
             |> (fun lc -> {p with LoadedComponents=lc})
+
 
 
     SetHasUnsavedChanges false
     |> JSDiagramMsg
     |> dispatch
+
+    
+
     dispatch FinishUICmd     
     p''
 

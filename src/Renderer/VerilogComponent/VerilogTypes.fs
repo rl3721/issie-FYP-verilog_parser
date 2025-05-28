@@ -74,10 +74,12 @@ type NamedPortConnectionT = {Type: string; PortId: IdentifierT; Primary: Primary
 
 type ModuleInstantiationT = {Type: string; Module: IdentifierT; Identifier: IdentifierT; Connections: NamedPortConnectionT array}
 
-type ParameterAssignmentT = {Type: string; ParameterIdentifier: IdentifierT; ParameterRHS: ExpressionT}
+type ConstantExpressionT = {Type: string; ConstantExpression: ExpressionT}
+
+type ParameterAssignmentT = {Type: string; ParameterIdentifier: IdentifierT; ParameterRHS: ConstantExpressionT}
 type ParameterDeclarationT = {Type:string; ParameterAssignmentList: ParameterAssignmentT list}
 
-/// The AST type for various types of module items, different fields are dilled accordingly
+/// The AST type for various types of module items, different fields are filled accordingly
 type ItemT =    {Type: string; 
                 ItemType: string; 
                 IODecl: IOItemT option; 

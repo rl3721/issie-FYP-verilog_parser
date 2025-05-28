@@ -258,7 +258,7 @@ export function fix(json_data) {
                             ParamDecl: declaration, 
                             Location: declaration.Location}
                     )
-                console.log(declaration);
+                // console.log(declaration);
                 }
             }
         catch (e) {
@@ -266,7 +266,6 @@ export function fix(json_data) {
         }
         var statement_list = obj.Module.ModuleItems.ItemList;
         obj.Module.ModuleItems.ItemList = parameter_item_list.concat(statement_list);
-        console.log('debug');
     }
     return JSON.stringify(obj);
 }

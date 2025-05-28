@@ -484,6 +484,7 @@ let checkNumber linesLocations (num:NumberT) =
 // /////////// Helpers for Expressions ////////////////
 
 type ExpressionNode =
+    | ConstantExpression of ConstantExpressionT
     | Expression of ExpressionT
     | Unary of UnaryT
     | Number of NumberT

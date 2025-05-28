@@ -658,7 +658,7 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                 
                 // Creating parameter_defs type for the sheet
                 let param_bindings: ParamBindings = SheetCreatorOutput.paramBindings
-                let component_slot_expr:ComponentSlotExpr = Map.ofList []
+                let component_slot_expr:ComponentSlotExpr = Map.empty
                 let parameter_defs: ParameterDefs = {
                     DefaultBindings = param_bindings
                     ParamSlots = component_slot_expr
@@ -686,7 +686,10 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
             match model.CurrentProj with
             | None -> failwithf "What? current project cannot be None at this point in writing Verilog Component"
             | Some project ->
-                let name = (Option.get moduleName)
+                let name = 
+                    match moduleName with
+                        | Some name -> name
+                        | None -> failwithf "no name found"
                 let folderPath = project.ProjectPath
                 let path = pathJoin [| folderPath; name + ".v" |]
                 let code = getCode dialogData
@@ -705,7 +708,6 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                 // TODO: update parameter as well
                 dispatch (StartUICmd SaveSheet) 
                 updateVerilogFileActionWithModelUpdate newCS name model dispatch |> ignore
-                failwithf "Point B" 
                 dispatch <| Sheet(SheetT.DoNothing)
 
 
