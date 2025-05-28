@@ -6,6 +6,7 @@ open CommonTypes
 open VerilogAST
 open ErrorCheckProcedural
 open ErrorCheckHelpers
+open ConstantExpressionHelpers
 
 let private getFileInProject (name:string) project = project.LoadedComponents |> List.tryFind (fun comp -> comp.Name.ToUpper() = name.ToUpper())
 
@@ -25,6 +26,7 @@ let createErrorMessage
     (name: string)
         : ErrorInfo list = 
     
+    printf "Creating error message for %s at %d\n" name currLocation
     let prevIndex = List.findIndexBack (fun x -> x <= currLocation) newLinesLocations
     let line = prevIndex+1
     let prevLineLocation = newLinesLocations[prevIndex]
@@ -852,7 +854,53 @@ let getPortMap items =
             | true -> []
     ) |> Map.ofList
     
+let getdependentParameters (expr :ConstantExpressionT) = 
+    let rec get_dependent_param_list (expr:ExpressionNode) = 
+        match expr with
+        | ConstantExpression constExpr -> get_dependent_param_list (Expression constExpr.ConstantExpression)
+        | Expression expr -> 
+            let left_list = 
+                match expr.Head with
+                | Some left -> get_dependent_param_list (Expression left)
+                | None -> []
+            let right_list = 
+                match expr.Tail with
+                | Some right -> get_dependent_param_list (Expression right)
+                | None -> []
+            let unary_list = 
+                match expr.Unary with
+                | Some unary -> get_dependent_param_list (Unary unary)
+                | None -> []
+            left_list @ right_list @ unary_list
+        | Unary unary -> 
+            match unary.Type with
+            | "parenthesis" -> 
+                match unary.Expression with
+                | Some expr -> get_dependent_param_list (Expression expr)
+                | None -> []
+            | "primary" -> 
+                match unary.Primary with
+                | Some primary -> get_dependent_param_list (Primary primary)
+                | None -> []
+            | _ -> []
+        | Primary primary -> 
+            match primary.PrimaryType with
+            | "identifier" -> [primary.Primary.Name]
+            | _ -> [] // should not happen, error caught by previous steps checking no vectors in constant expressions
+        | _ -> []
+    get_dependent_param_list (ConstantExpression expr)
+            
+            
+       
 
+let getParameterMap items =
+    items
+    |> List.map(fun item -> Option.get item.ParamDecl)
+    |> List.map(fun decl -> decl.ParameterAssignmentList)
+    |> List.concat
+    |> List.map (fun assign -> (assign.ParameterIdentifier.Name, getdependentParameters assign.ParameterRHS))
+    |> Map.ofList
+    
 let getInputSizeMap inputNameList portSizeMap =
     portSizeMap
     |> Map.filter (fun n s -> (List.exists (fun x -> x = n) inputNameList))
@@ -911,18 +959,32 @@ let getWireLocationMap items =
     |> Map.ofList
 
 
+
 /// Main error-finder function
 /// Returns a list of errors (type ErrorInfo)
 let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Project) =
     let (items: ItemT list) = ast.Module.ModuleItems.ItemList |> Array.toList
     ///////// STATIC MAPS, LISTS NEEDED  ////////////////
+
+    // map of parameters and their dependent parameters
+    let parameterMap = getParameterMap items
+    let parameterDecls = items |> List.filter (fun item -> Option.isSome item.ParamDecl)
+    let paramBindings, parameterParseError = 
+        try
+            getParamBindings parameterDecls, []
+        with UnsupportedConstantExpression msg ->
+            let extraMsg = [|{Text=sprintf "Unsupported constant expression: %s" (fst msg); Copy=false; Replace=NoReplace}|]
+            Map.empty, createErrorMessage linesLocations (snd msg) (fst msg) extraMsg "Parameter Constant Expression Parsing Error"
+
+        
+
     let portMap  = getPortMap items
     let portSizeMap,portLocationMap = getPortSizeAndLocationMap items
     let portWidthDeclarationMap = getPortWidthDeclarationMap items
     
     let notUniquePortDeclarations = getNotUniquePortDeclarations items
     
-    let inputNameList = getInputNames portMap
+    let inputNameList: string list = getInputNames portMap
 
     let wireSizeMap = getWireSizeMap items
     let declarations = foldAST getDeclarations [] (VerilogInput(ast))
@@ -942,29 +1004,40 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
         ||> List.fold (fun (wireLocMap: Map<string, int>) (decl: DeclarationT) -> 
                 (wireLocMap, decl.Variables)
                 ||> Array.fold (fun map var -> Map.add var.Name var.Location map))
+
+    
+        
     //////////////////////////////////////////////
     
     let errors =
-        []  //begin with empty list and add errors to it
-        |> nameCheck ast linesLocations origin project //name is valid (not used by another sheet/component)
-        |> portCheck ast linesLocations //all ports are declared as input/output
-        |> checkIODeclarations ast portWidthDeclarationMap portLocationMap linesLocations notUniquePortDeclarations portMap project //all ports declared as IO are defined in the module header
-        |> checkIOWidthDeclarations ast linesLocations //correct port width declaration (e.g. [1:4] -> invalid)
-        |> checkWiresAndAssignments ast portMap portSizeMap portWidthDeclarationMap inputNameList linesLocations wireNameList wireSizeMap wireLocationMap //checks 1-by-1 all assignments (wires & output ports)
-        |> checkAllOutputsAssigned ast portMap portSizeMap linesLocations //checks whether all output ports have been assined a value
-        |> checkUnsupportedKeywords ast linesLocations
-        |> checkProceduralAssignments ast linesLocations
-        |> checkVariablesDrivenSimultaneously ast linesLocations
-        |> checkVariablesAlwaysAssigned ast linesLocations portSizeMap wireSizeMap
-        |> checkCasesStatements ast linesLocations portSizeMap wireSizeMap
-        |> checkExpressions ast linesLocations wireSizeMap
-        |> checkClk ast linesLocations portMap
-        |> checkClkNames ast linesLocations portMap portLocationMap portSizeMap
-        |> cycleCheck ast linesLocations portSizeMap wireSizeMap
-        |> checkVariablesUsed ast linesLocations portSizeMap wireSizeMap
-        |> checkAlwaysCombRHS ast linesLocations portSizeMap wireSizeMap
-        |> checkAssignmentWidths ast linesLocations portSizeMap wireSizeMap
-        |> checkModuleInstantiations ast linesLocations portSizeMap wireSizeMap project portMap
-        |> checkInputsAssigned ast linesLocations portMap
-        |> List.distinct // filter out possible double Errors
+        try 
+            parameterParseError
+            |> nameCheck ast linesLocations origin project //name is valid (not used by another sheet/component)
+            // check for if all constant expressions are non vector, and have only limited operations
+            // check for if all parameters are compile time determined and no cycles
+            // check if all remaining constant expressions are valid
+            |> portCheck ast linesLocations //all ports are declared as input/output
+            |> checkIODeclarations ast portWidthDeclarationMap portLocationMap linesLocations notUniquePortDeclarations portMap project //all ports declared as IO are defined in the module header
+            |> checkIOWidthDeclarations ast linesLocations //correct port width declaration (e.g. [1:4] -> invalid)
+            |> checkWiresAndAssignments ast portMap portSizeMap portWidthDeclarationMap inputNameList linesLocations wireNameList wireSizeMap wireLocationMap //checks 1-by-1 all assignments (wires & output ports)
+            |> checkAllOutputsAssigned ast portMap portSizeMap linesLocations //checks whether all output ports have been assined a value
+            |> checkUnsupportedKeywords ast linesLocations
+            |> checkProceduralAssignments ast linesLocations
+            |> checkVariablesDrivenSimultaneously ast linesLocations
+            |> checkVariablesAlwaysAssigned ast linesLocations portSizeMap wireSizeMap
+            |> checkCasesStatements ast linesLocations portSizeMap wireSizeMap
+            |> checkExpressions ast linesLocations wireSizeMap
+            |> checkClk ast linesLocations portMap
+            |> checkClkNames ast linesLocations portMap portLocationMap portSizeMap
+            |> cycleCheck ast linesLocations portSizeMap wireSizeMap
+            |> checkVariablesUsed ast linesLocations portSizeMap wireSizeMap
+            |> checkAlwaysCombRHS ast linesLocations portSizeMap wireSizeMap
+            |> checkAssignmentWidths ast linesLocations portSizeMap wireSizeMap
+            |> checkModuleInstantiations ast linesLocations portSizeMap wireSizeMap project portMap
+            |> checkInputsAssigned ast linesLocations portMap
+            |> List.distinct // filter out possible double Errors
+        with UnsupportedConstantExpression msg ->
+            // if there is an error in parsing constant expressions, return it
+            let extraMsg = [|{Text=sprintf "Unsupported constant expression: %s" (fst msg); Copy=false; Replace=NoReplace}|]
+            createErrorMessage linesLocations (snd msg) (fst msg) [||] "Constant Expression Parsing Error"
     errors

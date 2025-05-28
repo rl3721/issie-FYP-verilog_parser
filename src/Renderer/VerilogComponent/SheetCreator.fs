@@ -1354,15 +1354,7 @@ let compileModule (node: ASTNode) (varToCompMap: Map<string,Component>) (ioToCom
 
 
 
-let getParamBindings (items: ItemT list)= 
-    let param_bindings = 
-        items
-        |> List.map(fun item -> Option.get item.ParamDecl)
-        |> List.map(fun decl -> decl.ParameterAssignmentList)
-        |> List.concat
-        |> List.map(fun assignment -> (ParamName assignment.ParameterIdentifier.Name,  (ConstantExpressionToParamExpression (ConstantExpression assignment.ParameterRHS))))
-        |> Map.ofList
-    param_bindings
+
 
 /////////   MAIN FUNCTION   //////////
 

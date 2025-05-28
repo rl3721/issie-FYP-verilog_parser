@@ -22,8 +22,13 @@ type ExpressionNode =
     | Number of NumberT
     | Primary of PrimaryT
 
+exception UnsupportedConstantExpression of (string*int)
 
 
+
+/// Converts a ConstantExpressionT into a ParamExpression.
+/// Error checking is built into the function to ensure that the expression is valid and operations are supported.
+/// Exceptions are raised for unsupported expressions or operations, and caught by the caller.
 let rec ConstantExpressionToParamExpression (expression:ExpressionNode) =
     printf "Evaluating expression %A\n" expression
     let value = 
@@ -40,31 +45,31 @@ let rec ConstantExpressionToParamExpression (expression:ExpressionNode) =
                 match expr.Operator.Value with
                 | "+" -> PAdd(left, right)
                 | "-" -> PSubtract(left, right)
-                | _ -> failwithf "Unknown operator %s in constant expression" expr.Operator.Value //shouldn't happen
+                | _ -> raise (UnsupportedConstantExpression (sprintf "Unknown operator %s in constant expression" expr.Operator.Value, expr.Location))  //shouldn't happen
             | "multiplicative" ->
                 let left = ConstantExpressionToParamExpression (Expression expr.Head.Value)
                 let right = ConstantExpressionToParamExpression (Expression expr.Tail.Value)
                 match expr.Operator.Value with
                 | "*" -> PMultiply(left, right)
                 | "/" -> PDivide(left, right)
-                | _ -> failwithf "Unknown operator %s in constant expression" expr.Operator.Value //shouldn't happen
+                | _ -> raise(UnsupportedConstantExpression (sprintf "Unknown operator %s in constant expression" expr.Operator.Value, expr.Location))  //shouldn't happen
             | "unary" ->
                 ConstantExpressionToParamExpression (Unary expr.Unary.Value)
-            | _ -> // other types of expression not yet supported, should be caught in error checking
-                failwithf "Unsupported expression type %s in constant expression" expr.Type
+            | _ ->
+                raise (UnsupportedConstantExpression (sprintf "Unsupported expression type %s in constant expression" expr.Type, expr.Location)) 
         | Unary unary ->
             match unary.Type with
             | "number" -> ConstantExpressionToParamExpression (Number unary.Number.Value)
             | "parenthesis" -> ConstantExpressionToParamExpression (Expression unary.Expression.Value)
             | "primary" -> ConstantExpressionToParamExpression (Primary unary.Primary.Value)
-            | _ ->  // other types of unary not yet supported, should be caught in error checking
-                failwithf "Unsupported unary type %s in constant expression" unary.Type 
+            | _ -> 
+                raise (UnsupportedConstantExpression (sprintf "Unsupported unary type %s in constant expression" unary.Type, unary.Location))
         | Primary primary ->
             match primary.PrimaryType with
             | "identifier" ->
                  PParameter (ParamName primary.Primary.Name)
-            | _ // other types of primary not yet supported, should be caught in error checking
-                -> failwithf "Unsupported primary type %s in constant expression" primary.PrimaryType
+            | _ 
+                -> raise (UnsupportedConstantExpression (sprintf "Non single identifier primary type not yet supported, Unsupported primary type %s in constant expression" primary.PrimaryType, primary.Location)) 
         | Number number ->
             match number.NumberType with
             | "all" ->
@@ -73,14 +78,24 @@ let rec ConstantExpressionToParamExpression (expression:ExpressionNode) =
                 | "'d" -> System.Convert.ToInt32 (number.AllNumber.Value, 10) |> PInt
                 | "'h" -> System.Convert.ToInt32 (number.AllNumber.Value, 16) |> PInt
                 | "'o" -> System.Convert.ToInt32 (number.AllNumber.Value, 8) |> PInt
-                | _ -> failwithf "Should not happen Unfound base %s in constant expression" (Option.defaultValue "" number.Base)
+                | _ -> raise (UnsupportedConstantExpression (sprintf  "Should not happen, Unfound base %s in constant expression" (Option.defaultValue "" number.Base), number.Location))
             | "unsigned" ->
                 number.UnsignedNumber.Value
                 |> System.Convert.ToInt32
                 |> PInt
             | _ -> 
-                failwithf "Should not happen, Unfound number type %s in constant expression" number.NumberType
+                raise (UnsupportedConstantExpression (sprintf "unknown number type %s in constant expression" number.NumberType, number.Location)) 
     value
+
+let getParamBindings (items: ItemT list)= 
+    let param_bindings = 
+        items
+        |> List.map(fun item -> Option.get item.ParamDecl)
+        |> List.map(fun decl -> decl.ParameterAssignmentList)
+        |> List.concat
+        |> List.map(fun assignment -> (ParamName assignment.ParameterIdentifier.Name,  (ConstantExpressionToParamExpression (ConstantExpression assignment.ParameterRHS))))
+        |> Map.ofList
+    param_bindings
 
 
 /// returns the value of a parameter expression given a set of parameter bindings.

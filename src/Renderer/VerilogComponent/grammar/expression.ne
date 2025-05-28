@@ -5,11 +5,11 @@
 ##### 8. Expressions #####
 #### 8.1 Concatenations ####
 CONCATENATIONS
-    -> %lbrace _ LIST_OF_UNARIES _ %rbrace {%function(d) {return {Type: "concat", Primary: null, Number: null, Expression: d[2]};} %}
+    -> %lbrace _ LIST_OF_UNARIES _ %rbrace {%function(d) {return {Type: "concat", Primary: null, Number: null, Expression: d[2], Location: d[2].Location}; } %}
 
 LIST_OF_UNARIES
-    -> EXPRESSION _ %comma _ LIST_OF_UNARIES {%function(d) {return {Type: "unary_list", Head : d[0], Tail: d[4]};} %}
-    | EXPRESSION {% function(d) {return {Type: "unary_list", Head: d[0], Tail: null};}  %}
+    -> EXPRESSION _ %comma _ LIST_OF_UNARIES {%function(d) {return {Type: "unary_list", Head : d[0], Tail: d[4], Location: d[0].Location};} %}
+    | EXPRESSION {% function(d) {return {Type: "unary_list", Head: d[0], Tail: null, Location: d[0].Location};}  %}
 
 # MULTIPLE_CONCATENATION : TODO implemented this
 
@@ -24,86 +24,86 @@ CONSTANT_EXPRESSION
 EXPRESSION -> CONDITIONAL {% id %}
 
 CONDITIONAL
-    -> LOGICAL_OR _ %question _ CONDITIONAL_RESULT {%function(d) {return {Type: "conditional_cond", Operator:d[2].value, Head: d[0], Tail: d[4]};} %}
+    -> LOGICAL_OR _ %question _ CONDITIONAL_RESULT {%function(d) {return {Type: "conditional_cond", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
     | LOGICAL_OR {% id %}
 
 CONDITIONAL_RESULT
-    -> LOGICAL_OR _ %colon _ LOGICAL_OR {%function(d) {return {Type: "conditional_result", Operator:d[2].value, Head: d[0], Tail: d[4]};} %}
+    -> LOGICAL_OR _ %colon _ LOGICAL_OR {%function(d) {return {Type: "conditional_result", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
 
 LOGICAL_OR
-    -> LOGICAL_OR _ %lor _ LOGICAL_AND {%function(d) {return {Type: "logical_OR", Operator:d[2].value, Head: d[0], Tail: d[4]};} %}
+    -> LOGICAL_OR _ %lor _ LOGICAL_AND {%function(d) {return {Type: "logical_OR", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
     | LOGICAL_AND {% id %}
 
 LOGICAL_AND
-    -> LOGICAL_AND _ %land _ BITWISE_OR {%function(d) {return {Type: "logical_AND", Operator:d[2].value, Head: d[0], Tail: d[4]};} %}  
+    -> LOGICAL_AND _ %land _ BITWISE_OR {%function(d) {return {Type: "logical_AND", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}  
     | BITWISE_OR {% id %}
 
 BITWISE_OR 
-    -> BITWISE_OR _ %or _ BITWISE_XOR {%function(d) {return {Type: "bitwise_OR", Operator:d[2].value, Head: d[0], Tail: d[4]};} %}
+    -> BITWISE_OR _ %or _ BITWISE_XOR {%function(d) {return {Type: "bitwise_OR", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
     | BITWISE_XOR {% id %}
 
 BITWISE_XOR  
-    -> BITWISE_XOR _ XOR_XNOR_OPERATOR _ BITWISE_AND {%function(d) {return {Type: "bitwise_XOR", Operator:d[2], Head: d[0], Tail: d[4]};} %}
+    -> BITWISE_XOR _ XOR_XNOR_OPERATOR _ BITWISE_AND {%function(d) {return {Type: "bitwise_XOR", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
     | BITWISE_AND {% id %}
 
 BITWISE_AND 
-    -> BITWISE_AND _ %and _ LOGICAL_SHIFT {%function(d) {return {Type: "bitwise_AND", Operator:d[2].value, Head: d[0], Tail: d[4]};} %}
+    -> BITWISE_AND _ %and _ LOGICAL_SHIFT {%function(d) {return {Type: "bitwise_AND", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
     | EQUALITY {% id %}
 
 # here put case equality, logical equality, comparison
 EQUALITY
-    -> EQUALITY _ EQUALITY_OPERATOR _ COMPARISON {%function(d) {return {Type: "equality", Operator:d[2], Head: d[0], Tail: d[4]};} %}
+    -> EQUALITY _ EQUALITY_OPERATOR _ COMPARISON {%function(d) {return {Type: "equality", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
     | COMPARISON {% id %}
 
 COMPARISON
-    -> COMPARISON _ RELATIONAL_OPERATOR _ LOGICAL_SHIFT {%function(d) {return {Type: "comparison", Operator:d[2], Head: d[0], Tail: d[4]};} %}
+    -> COMPARISON _ RELATIONAL_OPERATOR _ LOGICAL_SHIFT {%function(d) {return {Type: "comparison", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
     | LOGICAL_SHIFT {% id %}
 
 LOGICAL_SHIFT #TODO: check if the first rule can be removed after fixing numbers
-    -> LOGICAL_SHIFT _ SHIFT_OPERATOR _ UNSIGNED_REDUCTED {%function(d) {return {Type: "SHIFT", Operator:d[2], Head: d[0], Tail: d[4]};} %}
-    | LOGICAL_SHIFT _ SHIFT_OPERATOR _ ADDITIVE {%function(d) {return {Type: "SHIFT", Operator:d[2], Head: d[0], Tail: d[4]};} %}
+    -> LOGICAL_SHIFT _ SHIFT_OPERATOR _ UNSIGNED_REDUCTED {%function(d) {return {Type: "SHIFT", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
+    | LOGICAL_SHIFT _ SHIFT_OPERATOR _ ADDITIVE {%function(d) {return {Type: "SHIFT", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
     | ADDITIVE {% id %}
 
     # Used for unsigned numbers (only in logical shifts), arithmetic shifts not implemented as signed number number implemented
     UNSIGNED_REDUCTED 
-        -> UNSIGNED_UNARY {%function(d) {return {Type: "unary_unsigned", Unary: d[0]};} %}
+        -> UNSIGNED_UNARY {%function(d) {return {Type: "unary_unsigned", Unary: d[0], Location: d[0].Location};} %}
 
     UNSIGNED_UNARY
-        -> U_NUMBER {%function(d) {return {Type: "number", Primary: null, Number: d[0], Expression: null};} %}
+        -> U_NUMBER {%function(d) {return {Type: "number", Primary: null, Number: d[0], Expression: null, Location: d[0].Location};} %}
     
     U_NUMBER
         -> %unsigned_number {%function(d,l,reject) {return {Type: "number", NumberType: "decimal", Bits: null, Base: null, UnsignedNumber: d[0].value, AllNumber: null, Location: d[0].offset};} %}
 
 
 ADDITIVE
-    -> ADDITIVE _ ADDITIVE_OPERATOR _ MULTIPLICATIVE {%function(d) {return {Type: "additive", Operator:d[2], Head: d[0], Tail: d[4]};} %}
+    -> ADDITIVE _ ADDITIVE_OPERATOR _ MULTIPLICATIVE {%function(d) {return {Type: "additive", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
     | MULTIPLICATIVE {% id %}
 
 MULTIPLICATIVE
-    -> MULTIPLICATIVE _ MULTIPLICATION_OPERATOR _ REDUCTION_OR_NEGATION {%function(d) {return {Type: "multiplicative", Operator:d[2], Head: d[0], Tail: d[4]};} %}
+    -> MULTIPLICATIVE _ MULTIPLICATION_OPERATOR _ REDUCTION_OR_NEGATION {%function(d) {return {Type: "multiplicative", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};} %}
     | REDUCTION_OR_NEGATION {% id %}
 
 REDUCTION_OR_NEGATION  # TODO: change such that unary operator not need parenthesis, double check for order of operations
-    -> %lparen _ UNARY_OPERATOR _ UNARY _ %rparen {%function(d) {return {Type: "reduction", Operator:d[2], Unary: d[4]};} %}
-    | %not _ UNARY {%function(d) {return {Type: "negation", Operator: "~", Unary: d[2]};} %}
-    | UNARY {%function(d) {return {Type: "unary", Unary: d[0]};} %}
+    -> %lparen _ UNARY_OPERATOR _ UNARY _ %rparen {%function(d) {return {Type: "reduction", Operator:d[2].value, Unary: d[4], Location: d[2].offset};} %}
+    | %not _ UNARY {%function(d) {return {Type: "negation", Operator: "~", Unary: d[2], Location: d[2].offset};} %}
+    | UNARY {%function(d) {return {Type: "unary", Unary: d[0], Location: d[0].Location};} %}
 
 #### 8.4 Primaries ####
 
 UNARY 
-    -> PRIMARY {%function(d) {return {Type: "primary", Primary: d[0], Number: null, Expression: d[0].Expression};} %}
-    | NUMBER {%function(d) {return {Type: "number", Primary: null, Number: d[0], Expression: null};} %}
-    | %lparen _ BITWISE_OR _ %rparen {%function(d) {return {Type: "parenthesis", Primary: null, Number: null, Expression: d[2]};} %}
+    -> PRIMARY {%function(d) {return {Type: "primary", Primary: d[0], Number: null, Expression: d[0].Expression, Location: d[0].Location};} %}
+    | NUMBER {%function(d) {return {Type: "number", Primary: null, Number: d[0], Expression: null, Location: d[0].Location};} %}
+    | %lparen _ BITWISE_OR _ %rparen {%function(d) {return {Type: "parenthesis", Primary: null, Number: null, Expression: d[2], Location: d[2].Location};} %}
     | CONCATENATIONS {% id %}
     # TODO: multiple concatenation
 
 
 
 PRIMARY # TODO: refactor this part such it accepts constant expressions
-    -> IDENTIFIER {%function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0]};} %}
-    | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit", BitsStart: d[4], BitsEnd: d[4], Primary: d[0]};} %}
-    | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %colon _ UNSIGNED_NUMBER _ %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bits", BitsStart: d[4], BitsEnd: d[8], Primary: d[0]};} %}
-    | IDENTIFIER _ %lbracket _ EXPRESSION _ %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit2", BitsStart: null, BitsEnd: null, Primary: d[0], Expression: d[4], Width:1};} %}
+    -> IDENTIFIER {%function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], Location: d[0].Location};} %}
+    | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit", BitsStart: d[4], BitsEnd: d[4], Primary: d[0], Location: d[0].Location};} %}
+    | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %colon _ UNSIGNED_NUMBER _ %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bits", BitsStart: d[4], BitsEnd: d[8], Primary: d[0], Location: d[0].Location};} %}
+    | IDENTIFIER _ %lbracket _ EXPRESSION _ %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit2", BitsStart: null, BitsEnd: null, Primary: d[0], Expression: d[4], Width:1, Location: d[0].Location};} %}
 
 #### 8.5 Expression left-side values ####
 
@@ -123,19 +123,19 @@ VARIABLE_BITSELECT_L_VALUE
 
 
 #### 8.6 Operators ####
-EQUALITY_OPERATOR -> %eq {%(d)=>{return d[0].value}%} | %neq {%(d)=>{return d[0].value}%} 
+EQUALITY_OPERATOR -> %eq {% id %} | %neq {% id %} 
 
-RELATIONAL_OPERATOR -> %lt {%(d)=>{return d[0].value}%} | %lte {%(d)=>{return d[0].value}%} | %gt {%(d)=>{return d[0].value}%} | %gte {%(d)=>{return d[0].value}%} 
+RELATIONAL_OPERATOR -> %lt {% id %} | %lte {% id %} | %gt {% id %} | %gte {% id %} 
 
-ADDITIVE_OPERATOR -> %plus {%(d)=>{return d[0].value}%} | %minus {%(d)=>{return d[0].value}%} 
+ADDITIVE_OPERATOR -> %plus {% id %} | %minus {% id %} 
 
-XOR_XNOR_OPERATOR -> %xor_xnor {%(d)=>{return d[0].value}%} 
+XOR_XNOR_OPERATOR -> %xor_xnor {% id %} 
 
-SHIFT_OPERATOR -> %sll {%(d)=>{return d[0].value}%} | %srl {%(d)=>{return d[0].value}%} | %sra {%(d)=>{return d[0].value}%} 
+SHIFT_OPERATOR -> %sll {% id %} | %srl {% id %} | %sra {% id %} 
 
-UNARY_OPERATOR -> %lnot {%(d)=>{return d[0].value}%}  | %and {%(d)=>{return d[0].value}%}  | %nand {%(d)=>{return d[0].value}%} | %or {%(d)=>{return d[0].value}%} | %nor {%(d)=>{return d[0].value}%} #{%function(d) {return d[0].join('');} %}
+UNARY_OPERATOR -> %lnot {% id %}  | %and {% id %}  | %nand {% id %} | %or {% id %} | %nor {% id %} #{%function(d) {return d[0].join('');} %}
 
-MULTIPLICATION_OPERATOR -> %mult {%(d)=>{return d[0].value}%} 
+MULTIPLICATION_OPERATOR -> %mult {% id %} 
 
 #### 8.7 Numbers ####
    

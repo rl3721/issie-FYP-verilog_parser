@@ -5,7 +5,7 @@ open VerilogTypes
 open Fable.Core.JsInterop
 open CommonTypes
 open VerilogAST
-open ConstantExpressionHelpers
+
 open NumberHelpers
 
 /// Helper function to create an ErrorInfo-type Error Message 
@@ -67,6 +67,7 @@ let rec primariesUsedInAssignment inLst (tree: ExpressionT) =
                                 Location=(Option.get (Option.get tree.Unary).Number).Location
                                 }
                             Width=None;
+                            Location = 1 //TODO: check if this is correct
                             }
                             
                             
@@ -480,8 +481,6 @@ let checkNumber linesLocations (num:NumberT) =
                     {Text=("The integer before 'h/'b represents the width of the number\n e.g. 12'hc7 -> 000011000111");Copy=false;Replace=NoReplace}
                 |]
             createErrorMessage linesLocations num.Location message extraMessages "0'b"
-
-
 
 
 /// make sure to include variables AND ports in portSizeMap
