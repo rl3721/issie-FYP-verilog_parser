@@ -7,6 +7,7 @@ open VerilogAST
 open ErrorCheckHelpers
 open NumberHelpers
 open Helpers
+open ConstantExpressionHelpers
 
 let rec private convert (lst:List<string>) acc =
     match lst with

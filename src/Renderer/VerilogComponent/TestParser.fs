@@ -325,7 +325,7 @@ let runCodeGenTests _ =
                             printfn $"[TEST] couldn't parse input {baseNameWithoutExtension file}"
                             {|
                                 CState=[],[]
-                                paramBindings=Map.empty
+                                parameterDefs = {DefaultBindings=Map.empty; ParamSlots=Map.empty}
                             |}
                     
                     let cs = createSheetOutput.CState

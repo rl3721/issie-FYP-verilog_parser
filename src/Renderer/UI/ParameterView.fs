@@ -18,6 +18,7 @@ open Optics.Operators
 open Optic
 open System.Text.RegularExpressions
 open Fulma.Extensions.Wikiki
+open ConstantExpressionHelpers
 
 //------------------------------------------------------------------------------------------------
 //------------------------------ Handle parameters defined on design sheets ----------------------
@@ -161,63 +162,6 @@ let modelToSlot_ (slot: ParamSlot) : Optics.Lens<Model, int> =
     >-> compSlot_ slot.CompSlot
 
 
-/// returns the value of a parameter expression given a set of parameter bindings.
-/// The simplified value will be either a constant or a linear combination of a constant and a parameter.
-/// NB here 'PINT is not a polymorphic type but a type parameter that will be instantiated to int or bigint.
-let evaluateParamExpression (paramBindings: ParamBindings) (paramExpr: ParamExpression) : Result<ParamInt, ParamError> =
-    // changed the function to be recursive
-    let rec recursiveEvaluation (expr: ParamExpression) : ParamExpression =
-        match expr with
-        | PInt _ -> expr // constant, nothing needs to be changed
-        | PParameter name -> 
-            match Map.tryFind name paramBindings with
-            | Some evaluated -> evaluated
-            | None -> PParameter name
-        | PAdd (left, right) ->
-            match recursiveEvaluation left, recursiveEvaluation right with
-            | PInt l, PInt r -> PInt (l+r)
-            | newLeft, newRight -> PAdd (newLeft, newRight) // keep as PAdd type
-        | PSubtract (left, right) -> 
-            match recursiveEvaluation left, recursiveEvaluation right with
-            | PInt l, PInt r -> PInt (l-r)
-            | newLeft, newRight -> PSubtract (newLeft, newRight) // keep as Psubtract type
-        | PMultiply (left, right) ->
-            match recursiveEvaluation left, recursiveEvaluation right with
-            | PInt l, PInt r -> PInt (l*r)
-            | newLeft, newRight -> PMultiply (newLeft, newRight)
-        | PDivide (left, right) ->
-            match recursiveEvaluation left, recursiveEvaluation right with
-            | PInt l, PInt r -> PInt (l/r)
-            | newLeft, newRight -> PDivide (newLeft, newRight)
-        | PRemainder (left, right) ->
-            match recursiveEvaluation left, recursiveEvaluation right with
-            | PInt l, PInt r -> PInt (l%r)
-            | newLeft, newRight -> PRemainder (newLeft, newRight)
-        
-    
-    let unwrapParamName (ParamName name) = name
-    
-    let rec collectUnresolved expr =
-        match expr with
-        | PInt _ -> []
-        | PParameter name -> [unwrapParamName name]  // Only collect unresolved parameters
-        | PAdd (left, right) 
-        | PSubtract (left, right) 
-        | PMultiply (left, right)
-        | PDivide (left, right) 
-        | PRemainder (left, right) ->
-            collectUnresolved left @ collectUnresolved right
-
-    match recursiveEvaluation paramExpr with
-    | PInt evaluated -> Ok evaluated
-    | unresolvedExpr ->
-        let unresolvedParams = collectUnresolved unresolvedExpr |> List.distinct
-        match unresolvedParams with
-        | [] -> Error "Unexpected error: no unresolved parameters found"
-        | [singleParam] -> Error $"Parameter {singleParam} could not be resolved"
-        | multipleParams -> 
-            let paramList = String.concat ", " multipleParams
-            Error $"Parameters {paramList} could not be resolved"
 
 let rec renderParamExpression (expr: ParamExpression) (precedence:int) : string =
     // TODO refactor ParamExpression DU and this function to to elminate duplication

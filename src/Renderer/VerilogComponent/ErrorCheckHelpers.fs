@@ -5,6 +5,7 @@ open VerilogTypes
 open Fable.Core.JsInterop
 open CommonTypes
 open VerilogAST
+open ConstantExpressionHelpers
 open NumberHelpers
 
 /// Helper function to create an ErrorInfo-type Error Message 
@@ -481,14 +482,7 @@ let checkNumber linesLocations (num:NumberT) =
             createErrorMessage linesLocations num.Location message extraMessages "0'b"
 
 
-// /////////// Helpers for Expressions ////////////////
 
-type ExpressionNode =
-    | ConstantExpression of ConstantExpressionT
-    | Expression of ExpressionT
-    | Unary of UnaryT
-    | Number of NumberT
-    | Primary of PrimaryT
 
 /// make sure to include variables AND ports in portSizeMap
 let getRHSBits portSizeMap expression=

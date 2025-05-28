@@ -9,6 +9,7 @@ open VerilogAST
 open ErrorCheck
 open ErrorCheckHelpers
 open ParameterTypes
+open ConstantExpressionHelpers
 /////// TYPES ////////
 
 type Circuit = {
@@ -1351,64 +1352,7 @@ let compileModule (node: ASTNode) (varToCompMap: Map<string,Component>) (ioToCom
     res
 
 
-let rec evaluateConstantExpression (expression:ExpressionNode) =
-    printf "Evaluating expression %A\n" expression
-    let value = 
-        match expression with
-        | ConstantExpression constExpr ->
-            printf "Evaluating constant expression %A\n" constExpr
-            evaluateConstantExpression (Expression constExpr.ConstantExpression)
-        | Expression expr -> 
-            printf "Evaluating expression of type aa %A\n" expr
-            match expr.Type with
-            | "additive" ->
-                let left = evaluateConstantExpression (Expression expr.Head.Value)
-                let right = evaluateConstantExpression (Expression expr.Tail.Value)
-                match expr.Operator.Value with
-                | "+" -> PAdd(left, right)
-                | "-" -> PSubtract(left, right)
-                | _ -> failwithf "Unknown operator %s in constant expression" expr.Operator.Value //shouldn't happen
-            | "multiplicative" ->
-                let left = evaluateConstantExpression (Expression expr.Head.Value)
-                let right = evaluateConstantExpression (Expression expr.Tail.Value)
-                match expr.Operator.Value with
-                | "*" -> PMultiply(left, right)
-                | "/" -> PDivide(left, right)
-                | _ -> failwithf "Unknown operator %s in constant expression" expr.Operator.Value //shouldn't happen
-            | "unary" ->
-                evaluateConstantExpression (Unary expr.Unary.Value)
-            | _ -> // other types of expression not yet supported, should be caught in error checking
-                failwithf "Unsupported expression type %s in constant expression" expr.Type
-        | Unary unary ->
-            match unary.Type with
-            | "number" -> evaluateConstantExpression (Number unary.Number.Value)
-            | "parenthesis" -> evaluateConstantExpression (Expression unary.Expression.Value)
-            | "primary" -> evaluateConstantExpression (Primary unary.Primary.Value)
-            | _ ->  // other types of unary not yet supported, should be caught in error checking
-                failwithf "Unsupported unary type %s in constant expression" unary.Type 
-        | Primary primary ->
-            match primary.PrimaryType with
-            | "identifier" ->
-                 PParameter (ParamName primary.Primary.Name)
-            | _ // other types of primary not yet supported, should be caught in error checking
-                -> failwithf "Unsupported primary type %s in constant expression" primary.PrimaryType
-        | Number number ->
-            match number.NumberType with
-            | "all" ->
-                match number.Base.Value with
-                | "'b" -> System.Convert.ToInt32 (number.AllNumber.Value, 2) |> PInt
-                | "'d" -> System.Convert.ToInt32 (number.AllNumber.Value, 10) |> PInt
-                | "'h" -> System.Convert.ToInt32 (number.AllNumber.Value, 16) |> PInt
-                | "'o" -> System.Convert.ToInt32 (number.AllNumber.Value, 8) |> PInt
-                | _ -> failwithf "Should not happen Unfound base %s in constant expression" (Option.defaultValue "" number.Base)
-            | "unsigned" ->
-                number.UnsignedNumber.Value
-                |> System.Convert.ToInt32
-                |> PInt
-            | _ -> 
-                failwithf "Should not happen, Unfound number type %s in constant expression" number.NumberType
-    value
-    // PInt 0
+
 
 let getParamBindings (items: ItemT list)= 
     let param_bindings = 
@@ -1416,7 +1360,7 @@ let getParamBindings (items: ItemT list)=
         |> List.map(fun item -> Option.get item.ParamDecl)
         |> List.map(fun decl -> decl.ParameterAssignmentList)
         |> List.concat
-        |> List.map(fun assignment -> (ParamName assignment.ParameterIdentifier.Name,  (evaluateConstantExpression (ConstantExpression assignment.ParameterRHS))))
+        |> List.map(fun assignment -> (ParamName assignment.ParameterIdentifier.Name,  (ConstantExpressionToParamExpression (ConstantExpression assignment.ParameterRHS))))
         |> Map.ofList
     param_bindings
 

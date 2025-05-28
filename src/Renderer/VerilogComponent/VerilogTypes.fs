@@ -34,16 +34,17 @@ type ModuleNameT = {Type : string; Name : IdentifierT}
 
 type NumberT = {Type: string; NumberType: string; Bits: string option; Base: string option; UnsignedNumber: string option; AllNumber: string option; Location: int }
 
-type RangeT = {Type: string; Start: string; End: string; Location: int}
-
-type IOItemT = {Type: string; DeclarationType: string; Range : RangeT option; Variables: IdentifierT array; Location: int}
-
-
-
 type PrimaryT = {Type: string; PrimaryType: string; BitsStart: string option; BitsEnd: string option; Primary: IdentifierT; Width: int option}
+
 
 type ExpressionT = {Type: string; Operator: string option; Head: ExpressionT option; Tail: ExpressionT option; Unary: UnaryT option}
     and UnaryT = {Type: string; Primary: PrimaryT option; Number: NumberT option; Expression: ExpressionT option}
+
+type ConstantExpressionT = {Type: string; ConstantExpression: ExpressionT}
+
+type RangeT = {Type: string; Start: string; End: string; Location: int}
+
+type IOItemT = {Type: string; DeclarationType: string; Range : RangeT option; Variables: IdentifierT array; Location: int}
 
 type AssignmentLHST = {Type: string; PrimaryType: string; BitsStart: string option; BitsEnd: string option; Primary: IdentifierT; VariableBitSelect: ExpressionT option; Width: int option}
 type AssignmentT = {Type: string; LHS: AssignmentLHST; RHS: ExpressionT}
@@ -73,8 +74,6 @@ type AlwaysConstructT = {Type: string; AlwaysType: string; Statement: StatementT
 type NamedPortConnectionT = {Type: string; PortId: IdentifierT; Primary: PrimaryT}
 
 type ModuleInstantiationT = {Type: string; Module: IdentifierT; Identifier: IdentifierT; Connections: NamedPortConnectionT array}
-
-type ConstantExpressionT = {Type: string; ConstantExpression: ExpressionT}
 
 type ParameterAssignmentT = {Type: string; ParameterIdentifier: IdentifierT; ParameterRHS: ConstantExpressionT}
 type ParameterDeclarationT = {Type:string; ParameterAssignmentList: ParameterAssignmentT list}

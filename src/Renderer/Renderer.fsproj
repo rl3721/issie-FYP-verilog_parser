@@ -58,11 +58,13 @@
     <Compile Include="VerilogComponent\VerilogTypes.fs" />
     <Compile Include="VerilogComponent\VerilogAST.fs" />
     <Compile Include="VerilogComponent\NearleyBindings.fs" />
+    <Compile Include="VerilogComponent\ConstantExpressionHelpers.fs" />   
     <Compile Include="VerilogComponent\ErrorCheckHelpers.fs" />
     <Compile Include="VerilogComponent\ErrorCheckProcedural.fs" />
     <Compile Include="VerilogComponent\ErrorCheck.fs" />
     <Compile Include="VerilogComponent\SheetCreator.fs" /> 
     <Compile Include="VerilogComponent\CodeEditorHelpers.fs" />   
+   
 
     <!-- JS and File interface -->
     <Compile Include="Interface\Version.fs" />
