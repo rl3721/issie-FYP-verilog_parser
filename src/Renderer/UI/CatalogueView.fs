@@ -657,12 +657,7 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                 let cs = SheetCreatorOutput.CState
                 
                 // Creating parameter_defs type for the sheet
-                let param_bindings: ParamBindings = SheetCreatorOutput.paramBindings
-                let component_slot_expr:ComponentSlotExpr = Map.empty
-                let parameter_defs: ParameterDefs = {
-                    DefaultBindings = param_bindings
-                    ParamSlots = component_slot_expr
-                }
+                let parameter_defs: ParameterDefs = SheetCreatorOutput.parameterDefs
 
                 let toSaveCanvasState = Helpers.JsonHelpers.stateToJsonString (cs, None, Some {
                                 Form = Some (Verilog name);
@@ -697,6 +692,7 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                 | Ok _ -> ()
                 | Error _ -> failwithf "Writing verilog file FAILED"
                 
+
                 let parsedCodeNearley = parseFromFile(code)
                 let output = Json.parseAs<ParserOutput> parsedCodeNearley
                 let result = Option.get output.Result
@@ -704,10 +700,11 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                 let parsedAST = fixedAST |> Json.parseAs<VerilogInput>
                 let SheetCreatorOutput = SheetCreator.createSheet parsedAST project
                 let newCS: Component list * List<Connection> = SheetCreatorOutput.CState
+                let newParameterDefs: ParameterDefs = SheetCreatorOutput.parameterDefs
 
                 // TODO: update parameter as well
                 dispatch (StartUICmd SaveSheet) 
-                updateVerilogFileActionWithModelUpdate newCS name model dispatch |> ignore
+                updateVerilogFileActionWithModelUpdate newCS newParameterDefs name model dispatch |> ignore
                 dispatch <| Sheet(SheetT.DoNothing)
 
 

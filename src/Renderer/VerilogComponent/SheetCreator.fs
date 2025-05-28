@@ -1411,8 +1411,6 @@ let rec evaluateConstantExpression (expression:ExpressionNode) =
     // PInt 0
 
 let getParamBindings (items: ItemT list)= 
-    let param_bindings_trivial = Map.ofList [(ParamName "WIDTH_TRIVIAL", PInt 1)]
-    printf "Getting parameter bindings for %d items" items.Length
     let param_bindings = 
         items
         |> List.map(fun item -> Option.get item.ParamDecl)
@@ -1428,10 +1426,13 @@ let createSheet input (project:Project)=
     let items = input.Module.ModuleItems.ItemList |> Array.toList
     let ioDecls = items |> List.filter (fun item -> Option.isSome item.IODecl)
     let parameterDecls = items |> List.filter (fun item -> Option.isSome item.ParamDecl)
-    printf "AAAAA"
-    printf "Creating sheet for module %s /n" parameterDecls.Head.ParamDecl.Value.ParameterAssignmentList.Head.ParameterIdentifier.Name
     let paramBindings = getParamBindings parameterDecls
+    let componentSlots:ComponentSlotExpr = Map.empty // TODO: get component slots from somewhere
 
+    let parameterDefs: ParameterDefs = {
+        DefaultBindings = paramBindings
+        ParamSlots = componentSlots
+    }
 
     let assignments = items |> List.filter (fun item -> Option.isSome item.Statement) 
     let wiresLHS = collectWiresLHS assignments // get declarations too
@@ -1548,7 +1549,7 @@ let createSheet input (project:Project)=
         |> fixCanvasState
     {|
         CState = finalCanvasState
-        paramBindings = paramBindings
+        parameterDefs = parameterDefs
     |}
 
 

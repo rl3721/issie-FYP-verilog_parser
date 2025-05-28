@@ -22,6 +22,7 @@ open CanvasExtractor
 open Notifications
 open PopupHelpers
 open DrawModelType
+open ParameterTypes
 open Sheet.SheetInterface
 open Optics
 open Optics.Operators
@@ -36,14 +37,14 @@ open Fulma.Color
 
 /// Save the Verilog file currently open, return the new sheet's Loadedcomponent if this has changed.
 /// Do not change model.
-let updateVerilogFileAction newCS name model (dispatch: Msg -> Unit)=
+let updateVerilogFileAction newCS newParameterDefs name model (dispatch: Msg -> Unit)=
     match model.CurrentProj with
     | None -> failwithf "No project"
     | Some project ->
         // "DEBUG: Saving Sheet"
         // printfn "DEBUG: %A" project.ProjectPath
         // printfn "DEBUG: %A" project.OpenFileName
-        let sheetInfo: SheetInfo = {Form=Some (Verilog name);Description=None; ParameterDefinitions=None} //only user defined sheets are editable and thus saveable
+        let sheetInfo: SheetInfo = {Form=Some (Verilog name);Description=None; ParameterDefinitions=Some newParameterDefs} //only user defined sheets are editable and thus saveable
         let savedState = newCS, getSavedWave model,(Some sheetInfo)
         saveStateToFile project.ProjectPath name savedState
         |> displayAlertOnError dispatch
@@ -74,14 +75,14 @@ let updateVerilogFileAction newCS name model (dispatch: Msg -> Unit)=
         Some (newLdc,newState)
         
 /// save current open Verilog file, updating model etc, and returning the loaded component and the saved (unreduced) canvas state
-let updateVerilogFileActionWithModelUpdate (newCS:CanvasState) name (model: Model) (dispatch: Msg -> Unit) =
+let updateVerilogFileActionWithModelUpdate (newCS:CanvasState) (newParameterDefs: ParameterDefs) name (model: Model) (dispatch: Msg -> Unit) =
     let p' =
         match model.CurrentProj with
         | None -> failwithf "What? Should never be able to save sheet when project=None"
         | Some p -> {p with WorkingFileName = Some name}
     let model' = {model with CurrentProj = Some p'}
 
-    let opt = updateVerilogFileAction newCS name model' dispatch
+    let opt = updateVerilogFileAction newCS newParameterDefs name model' dispatch
     let ldcOpt = Option.map fst opt
     let state = Option.map snd opt |> Option.defaultValue ([],[])
 
