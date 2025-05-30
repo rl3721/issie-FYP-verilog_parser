@@ -30,14 +30,14 @@ exception UnsupportedConstantExpression of (string*int)
 /// Error checking is built into the function to ensure that the expression is valid and operations are supported.
 /// Exceptions are raised for unsupported expressions or operations, and caught by the caller.
 let rec ConstantExpressionToParamExpression (expression:ExpressionNode) =
-    printf "Evaluating expression %A\n" expression
+    // printf "Evaluating expression %A\n" expression
     let value = 
         match expression with
         | ConstantExpression constExpr ->
-            printf "Evaluating constant expression %A\n" constExpr
+            // printf "Evaluating constant expression %A\n" constExpr
             ConstantExpressionToParamExpression (Expression constExpr.ConstantExpression)
         | Expression expr -> 
-            printf "Evaluating expression of type aa %A\n" expr
+            // printf "Evaluating expression of type aa %A\n" expr
             match expr.Type with
             | "additive" ->
                 let left = ConstantExpressionToParamExpression (Expression expr.Head.Value)
@@ -156,12 +156,50 @@ let evaluateParamExpression (paramBindings: ParamBindings) (paramExpr: ParamExpr
             let paramList = String.concat ", " multipleParams
             Error $"Parameters {paramList} could not be resolved"
 
-let ConstantExpressionToInt (expression:ExpressionNode) (param_bindings:ParamBindings) =
-    let param_expr = ConstantExpressionToParamExpression expression
+let ConstantExpressionToInt (expression:ConstantExpressionT) (param_bindings:ParamBindings) =
+    let param_expr = ConstantExpressionToParamExpression (ConstantExpression expression)
     let evaluationResult = evaluateParamExpression param_bindings param_expr 
     match evaluationResult with
     | Ok value -> value
     | Error err -> 
-        printfn "Error evaluating constant expression: %s" err
-        failwithf "Error evaluating constant expression: %s" err //TODO: handle this more gracefully in the future
+        printfn "Error evaluating constant expression: %s %i" err expression.Location
+        raise (UnsupportedConstantExpression 
+        (sprintf "Error evaluating constant expression: %s" err, expression.Location)) 
+
+
+let rec renderParamExpression (expr: ParamExpression) (precedence:int) : string =
+    // TODO refactor ParamExpression DU and this function to to elminate duplication
+    // for multiple binary operators. Could use a local function here, but the better
+    // solution would be refactoring the DU.
+    match expr with
+    | PInt value -> string value
+    | PParameter (ParamName name) -> name
+    | PAdd (left, right) -> 
+        let currentPrecedence = 1;
+        if (precedence > currentPrecedence) then
+            "(" + (renderParamExpression left currentPrecedence )+ "+" + renderParamExpression right currentPrecedence + ")"
+        else renderParamExpression left currentPrecedence + "+" + renderParamExpression right currentPrecedence
+    | PSubtract (left, right) -> 
+        let currentPrecedence = 1;
+        if (precedence > currentPrecedence) then
+            "(" + (renderParamExpression left currentPrecedence )+ "-" + renderParamExpression right currentPrecedence + ")"
+        else renderParamExpression left currentPrecedence + "-" + renderParamExpression right currentPrecedence
+    | PMultiply (left, right) -> 
+        let currentPrecedence = 2;
+        if (precedence > currentPrecedence) then
+            "(" + (renderParamExpression left currentPrecedence )+ "*" + renderParamExpression right currentPrecedence + ")"
+        else renderParamExpression left currentPrecedence + "*" + renderParamExpression right currentPrecedence
+    | PDivide (left, right) -> 
+        let currentPrecedence = 2;
+        if (precedence > currentPrecedence) then
+            "(" + (renderParamExpression left currentPrecedence )+ "/" + renderParamExpression right currentPrecedence + ")"
+        else renderParamExpression left currentPrecedence + "/" + renderParamExpression right currentPrecedence
+    | PRemainder (left, right) -> 
+        let currentPrecedence = 3;
+        "(" + renderParamExpression left currentPrecedence + "%" + renderParamExpression right currentPrecedence + ")" 
+
+
+let constantExpressionToString (expression:ExpressionNode) (param_bindings:ParamBindings) =
+    let param_expr = ConstantExpressionToParamExpression expression
+    renderParamExpression param_expr 0
 

@@ -99,7 +99,7 @@ var grammar = {
     {"name": "CONCATENATIONS", "symbols": [(lexer.has("lbrace") ? {type: "lbrace"} : lbrace), "_", "LIST_OF_UNARIES", "_", (lexer.has("rbrace") ? {type: "rbrace"} : rbrace)], "postprocess": function(d) {return {Type: "concat", Primary: null, Number: null, Expression: d[2], Location: d[2].Location}; }},
     {"name": "LIST_OF_UNARIES", "symbols": ["EXPRESSION", "_", (lexer.has("comma") ? {type: "comma"} : comma), "_", "LIST_OF_UNARIES"], "postprocess": function(d) {return {Type: "unary_list", Head : d[0], Tail: d[4], Location: d[0].Location};}},
     {"name": "LIST_OF_UNARIES", "symbols": ["EXPRESSION"], "postprocess": function(d) {return {Type: "unary_list", Head: d[0], Tail: null, Location: d[0].Location};}},
-    {"name": "CONSTANT_EXPRESSION", "symbols": ["EXPRESSION"], "postprocess": function(d) {return{Type: "constant_expression", ConstantExpression: d[0]}}},
+    {"name": "CONSTANT_EXPRESSION", "symbols": ["EXPRESSION"], "postprocess": function(d) {return{Type: "constant_expression", ConstantExpression: d[0], Location: d[0].Location}}},
     {"name": "EXPRESSION", "symbols": ["CONDITIONAL"], "postprocess": id},
     {"name": "CONDITIONAL", "symbols": ["LOGICAL_OR", "_", (lexer.has("question") ? {type: "question"} : question), "_", "CONDITIONAL_RESULT"], "postprocess": function(d) {return {Type: "conditional_cond", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};}},
     {"name": "CONDITIONAL", "symbols": ["LOGICAL_OR"], "postprocess": id},
@@ -334,7 +334,17 @@ var grammar = {
     {"name": "LIST_OF_VARIABLE_IDENTIFIERS", "symbols": ["VARIABLE_TYPE", "_", (lexer.has("comma") ? {type: "comma"} : comma), "_", "LIST_OF_VARIABLE_IDENTIFIERS"], "postprocess": function(d) {return [d[0]].concat(d[4]) ;}},
     {"name": "LIST_OF_VARIABLE_IDENTIFIERS", "symbols": ["VARIABLE_TYPE"], "postprocess": function(d) {return [d[0]];}},
     {"name": "PARAM_ASSIGNMENT", "symbols": ["IDENTIFIER", (lexer.has("op_assign") ? {type: "op_assign"} : op_assign), "CONSTANT_EXPRESSION"], "postprocess": function(d) {return {Type: "param_assignment", ParameterIdentifier: d[0], ParameterRHS:d[2]};}},
-    {"name": "RANGE", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "_", "UNSIGNED_NUMBER", "_", (lexer.has("colon") ? {type: "colon"} : colon), "_", "UNSIGNED_NUMBER", "_", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d,l,reject) {return {Type: "range", Start: d[2], End: d[6], Location: d[0].offset};}}
+    {"name": "RANGE", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "_", "UNSIGNED_NUMBER", "_", (lexer.has("colon") ? {type: "colon"} : colon), "_", "UNSIGNED_NUMBER", "_", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d,l,reject) {
+            // TODO: this is a temporary fix to handle range, fix this later when more constant expression is implemented
+            let start = {Type: "constant_expression", ConstantExpression: {Type: "unary", Location: d[0].offset, 
+                Unary:{Type: "number", Location: d[0].offset, 
+                    Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[2], Location: d[0].offset}}}};
+            let end = {Type: "constant_expression", ConstantExpression: {Type: "unary", Location: d[4].offset,
+                Unary:{Type: "number", Location: d[4].offset, 
+                    Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[6], Location: d[4].offset}}}};
+            // return {Type: "range", Start: d[2], End: d[6], Location: d[0].offset};
+            return {Type: "range", Start: start, End: end, Location: d[0].offset};
+        } }
 ]
   , ParserStart: "SOURCE_TEXT"
 }

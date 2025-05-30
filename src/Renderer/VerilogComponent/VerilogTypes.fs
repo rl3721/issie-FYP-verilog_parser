@@ -40,9 +40,9 @@ type PrimaryT = {Type: string; PrimaryType: string; BitsStart: string option; Bi
 type ExpressionT = {Type: string; Operator: string option; Head: ExpressionT option; Tail: ExpressionT option; Unary: UnaryT option; Location: int}
     and UnaryT = {Type: string; Primary: PrimaryT option; Number: NumberT option; Expression: ExpressionT option; Location: int}
 
-type ConstantExpressionT = {Type: string; ConstantExpression: ExpressionT}
+type ConstantExpressionT = {Type: string; ConstantExpression: ExpressionT; Location: int}
 
-type RangeT = {Type: string; Start: string; End: string; Location: int}
+type RangeT = {Type: string; Start: ConstantExpressionT; End: ConstantExpressionT; Location: int}
 
 type IOItemT = {Type: string; DeclarationType: string; Range : RangeT option; Variables: IdentifierT array; Location: int}
 

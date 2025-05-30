@@ -163,37 +163,6 @@ let modelToSlot_ (slot: ParamSlot) : Optics.Lens<Model, int> =
 
 
 
-let rec renderParamExpression (expr: ParamExpression) (precedence:int) : string =
-    // TODO refactor ParamExpression DU and this function to to elminate duplication
-    // for multiple binary operators. Could use a local function here, but the better
-    // solution would be refactoring the DU.
-    match expr with
-    | PInt value -> string value
-    | PParameter (ParamName name) -> name
-    | PAdd (left, right) -> 
-        let currentPrecedence = 1;
-        if (precedence > currentPrecedence) then
-            "(" + (renderParamExpression left currentPrecedence )+ "+" + renderParamExpression right currentPrecedence + ")"
-        else renderParamExpression left currentPrecedence + "+" + renderParamExpression right currentPrecedence
-    | PSubtract (left, right) -> 
-        let currentPrecedence = 1;
-        if (precedence > currentPrecedence) then
-            "(" + (renderParamExpression left currentPrecedence )+ "-" + renderParamExpression right currentPrecedence + ")"
-        else renderParamExpression left currentPrecedence + "-" + renderParamExpression right currentPrecedence
-    | PMultiply (left, right) -> 
-        let currentPrecedence = 2;
-        if (precedence > currentPrecedence) then
-            "(" + (renderParamExpression left currentPrecedence )+ "*" + renderParamExpression right currentPrecedence + ")"
-        else renderParamExpression left currentPrecedence + "*" + renderParamExpression right currentPrecedence
-    | PDivide (left, right) -> 
-        let currentPrecedence = 2;
-        if (precedence > currentPrecedence) then
-            "(" + (renderParamExpression left currentPrecedence )+ "/" + renderParamExpression right currentPrecedence + ")"
-        else renderParamExpression left currentPrecedence + "/" + renderParamExpression right currentPrecedence
-    | PRemainder (left, right) -> 
-        let currentPrecedence = 3;
-        "(" + renderParamExpression left currentPrecedence + "%" + renderParamExpression right currentPrecedence + ")" 
-
 
 /// Evaluates a list of constraints got from slots against a set of parameter bindings to
 /// check what values of param are allowed.

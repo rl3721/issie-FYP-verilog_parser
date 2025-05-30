@@ -7,6 +7,7 @@ open VerilogAST
 open ErrorCheckProcedural
 open ErrorCheckHelpers
 open ConstantExpressionHelpers
+open ParameterTypes
 
 let private getFileInProject (name:string) project = project.LoadedComponents |> List.tryFind (fun comp -> comp.Name.ToUpper() = name.ToUpper())
 
@@ -105,11 +106,16 @@ let checkIODeclarations
     (linesLocations: int list) 
     (nonUniquePortDeclarations: string list)
     (portMap: Map<string,string>)
+    (paramBindings: ParamBindings)
     (project: Project)
     (errorList: ErrorInfo list)
         : ErrorInfo list = 
     
     let portList = ast.Module.PortList |> Array.toList
+    let string_param_list = 
+        paramBindings
+        |> Map.toList
+        |> List.map (fun (ParamName k,v) -> k)
 
     let moduleInstantiationsPrimaries = 
         ([], (VerilogInput ast)) ||> foldAST getModuleInstantiationStatements
@@ -150,8 +156,8 @@ let checkIODeclarations
                     |]
                 createErrorMessage linesLocations currLocation message extraMessages port
             | true -> // Exists in module header
-                match List.contains port nonUniquePortDeclarations with
-                | true -> // CASE 3: Double definition
+                match (List.contains port nonUniquePortDeclarations, List.contains port string_param_list) with
+                | (true, _) -> // CASE 3: Double definition
                     let currLocation = Map.find port portLocationMap
                     let message = sprintf "Port '%s' is already defined" port
                     let extraMessages =
@@ -159,12 +165,20 @@ let checkIODeclarations
                             {Text=sprintf "Port '%s' is already defined" port ;Copy=false;Replace=NoReplace}
                         |]
                     createErrorMessage linesLocations currLocation message extraMessages port
-                | false -> [] //CASE 4: No errors
+                | (_, true) -> // CASE 4: Port is a parameter
+                    let currLocation = Map.find port portLocationMap
+                    let message = sprintf "Port '%s' is defined as a parameter" port
+                    let extraMessages =
+                        [|
+                            {Text=sprintf "Port '%s' is defined as a parameter \n Please use a different name for this port" port;Copy=false;Replace=NoReplace}
+                        |]
+                    createErrorMessage linesLocations currLocation message extraMessages port
+                | _ -> [] //CASE 4: No errors
     )
     |> List.append errorList   
 
 /// Checks whether the IO declarations have correct width format (i.e. Little-endian)
-let checkIOWidthDeclarations (ast: VerilogInput) linesLocations errorList  =
+let checkIOWidthDeclarations (ast: VerilogInput) linesLocations paramBindings errorList   =
     ast.Module.ModuleItems.ItemList
     |> Array.filter (fun item -> 
         item.ItemType = "output_declaration" || item.ItemType = "input_declaration"  
@@ -176,15 +190,17 @@ let checkIOWidthDeclarations (ast: VerilogInput) linesLocations errorList  =
         | true -> [] //No range given (i.e. one bit)
         | false -> 
             let range = Option.get ioDecl.Range
+            let startValue = int <| ConstantExpressionToInt ( range.Start) paramBindings
+            let endValue = int <| ConstantExpressionToInt ( range.End) paramBindings
             // CASE 1: Wrong width format
-            if (range.End <> "0" || (int range.Start) <= (int range.End)) then
+            if (endValue <> 0 || (startValue) <= endValue) then
                 let message = "Wrong width declaration"
-                let temp = if (int range.Start) <= (int range.End) then "\nBig-Endian format is not allowed yet by ISSIE" else ""
+                let temp = if (startValue) <= (endValue) then "\nBig-Endian format is not allowed yet by ISSIE" else ""
                 let extraMessages = 
                     [|
-                        {Text=(sprintf "A port's width can't be '[%s:%s]'\nCorrect form: [X:0]" range.Start range.End)+temp;Copy=false;Replace=NoReplace}
+                        {Text=(sprintf "A port's width can't be '[%i:%i]'\nCorrect form: [X:0]" startValue endValue)+temp;Copy=false;Replace=NoReplace}
                     |]
-                createErrorMessage linesLocations range.Location message extraMessages (range.Start+"[:0]")
+                createErrorMessage linesLocations range.Location message extraMessages ((constantExpressionToString (ConstantExpression (range.Start)) paramBindings) + "[:0]")
             else [] //CASE 2: No Errors
     )
     |> List.append errorList
@@ -410,9 +426,14 @@ let checkWiresAndAssignments
     (wireNameList: string list) 
     (wireSizeMap: Map<string,int>) 
     (wireLocationMap: Map<string,int>) 
+    (paramBindings: ParamBindings)
     (errorList: ErrorInfo list) 
         : ErrorInfo list =
-
+    let string_param_map = 
+            paramBindings
+            |> Map.toList
+            |> List.map (fun (ParamName k,v) -> (k,v))
+            |> Map.ofList
     let declarations = foldAST getDeclarations [] (VerilogInput(ast))
     let logicNameList = 
         declarations
@@ -445,12 +466,21 @@ let checkWiresAndAssignments
     /// Width : correct definition of width (i.e. Little-endian)
     let checkWireNameAndWidth wire notUniqueNames (localErrors:ErrorInfo list) =     
         let lhs = wire.LHS
-        match Map.tryFind lhs.Primary.Name portMap with
-        | Some portType  ->  //CASE 1: Invalid Name (already used variable by port)
+        
+        match ((Map.tryFind lhs.Primary.Name portMap), (Map.tryFind lhs.Primary.Name string_param_map)) with
+        | (Some portType, _)  ->  //CASE 1: Invalid Name (already used variable by port)
             let message = sprintf "Variable '%s' is already used by a port" lhs.Primary.Name
             let extraMessages = 
                 [|
                     {Text=(sprintf "Variable '%s' is declared as an %s port\nPlease use a different name for this wire" lhs.Primary.Name portType);Copy=false;Replace=NoReplace}
+                |]
+            createErrorMessage linesLocations lhs.Primary.Location message extraMessages lhs.Primary.Name
+        | (_, Some param) ->
+            //CASE 2: Invalid Name (already used variable by parameter)
+            let message = sprintf "Variable '%s' is already used by a parameter" lhs.Primary.Name
+            let extraMessages = 
+                [|
+                    {Text=(sprintf "Variable '%s' is declared as a parameter\nPlease use a different name for this wire" lhs.Primary.Name );Copy=false;Replace=NoReplace}
                 |]
             createErrorMessage linesLocations lhs.Primary.Location message extraMessages lhs.Primary.Name
         | _ -> 
@@ -482,17 +512,25 @@ let checkWiresAndAssignments
         let variables = decl.Variables
         (localErrors, variables)
         ||> Array.fold (fun errorList lhs ->
-            match Map.tryFind lhs.Name portMap with
-            | Some portType  ->  //CASE 1: Invalid Name (already used variable by port)
+            match (Map.tryFind lhs.Name portMap, Map.tryFind lhs.Name string_param_map) with
+            | (Some portType, _)  ->  //CASE 1: Invalid Name (already used variable by port)
                 let message = sprintf "Variable '%s' is already used by a port or variable" lhs.Name
                 let extraMessages = 
                     [|
                         {Text=(sprintf "Variable '%s' is declared as an %s port\nPlease use a different name for this variable" lhs.Name portType);Copy=false;Replace=NoReplace}
                     |]
                 errorList @ createErrorMessage linesLocations lhs.Location message extraMessages lhs.Name
+            | (_, Some param) ->
+                //CASE 2: Invalid Name (already used variable by parameter)
+                let message = sprintf "Variable '%s' is already used by a parameter" lhs.Name
+                let extraMessages = 
+                    [|
+                        {Text=(sprintf "Variable '%s' is declared as a parameter\nPlease use a different name for this variable" lhs.Name);Copy=false;Replace=NoReplace}
+                    |]
+                errorList @ createErrorMessage linesLocations lhs.Location message extraMessages lhs.Name
             | _ -> 
                 match List.tryFind (fun x -> x=lhs.Name) notUniqueNames with
-                | Some found  -> //CASE 2: Invalid Name (already used variable by another wire)
+                | Some found  -> //CASE 3: Invalid Name (already used variable by another wire)
                     let message = sprintf "Variable '%s' is already used by another wire" lhs.Name
                     let extraMessages = 
                         [|
@@ -503,8 +541,10 @@ let checkWiresAndAssignments
                     match isNullOrUndefined decl.Range with
                     |true -> localErrors // No errors
                     |false -> 
-                        let bStart = int <| (Option.get decl.Range).Start
-                        let bEnd = int <| (Option.get decl.Range).End
+                        // let bStart = int <| (Option.get decl.Range).Start
+                        let bStart = int <| ConstantExpressionToInt ( (Option.get decl.Range).Start) paramBindings 
+                        // let bEnd = int <| (Option.get decl.Range).End
+                        let bEnd = int <| ConstantExpressionToInt ( (Option.get decl.Range).End) paramBindings
                         // CASE 3: Wrong Width declaration
                         if (bEnd <> 0 || bStart <= bEnd) then
                             let message = "Wrong width declaration"
@@ -705,7 +745,7 @@ let checkWiresAndAssignments
     let declarations = foldAST getDeclarations [] (VerilogInput(ast))
     let localErrorsDecl =
         declarations
-        |> List.collect (fun decl -> checkLogicName decl notUniqeWireNames  [])
+        |> List.collect (fun decl -> checkLogicName decl notUniqeWireNames  [] )
 
     errorList @ localErrors @ localErrorsDecl @ exprErrors
 
@@ -796,7 +836,7 @@ let getNotUniquePortDeclarations items =
     |> List.map fst
 
 /// Returns the port-size map (e.g. (port "a" => 4 bits wide))
-let getPortSizeAndLocationMap items = 
+let getPortSizeAndLocationMap items paramBindings = 
     let portSizeLocation = 
         items |> List.collect (fun x -> 
             match (x.IODecl |> isNullOrUndefined) with
@@ -806,7 +846,10 @@ let getPortSizeAndLocationMap items =
                     let size = 
                         match isNullOrUndefined d.Range with
                         | true -> 1
-                        | false -> ((Option.get d.Range).Start |> int) - ((Option.get d.Range).End |> int) + 1
+                        | false -> 
+                            let start_value = ConstantExpressionToInt ( (Option.get d.Range).Start) paramBindings
+                            let end_value = ConstantExpressionToInt ( (Option.get d.Range).End) paramBindings
+                            start_value - end_value + 1
                     let location = x.Location
                     d.Variables 
                     |> Array.toList 
@@ -822,7 +865,7 @@ let getPortSizeAndLocationMap items =
 
 
 /// Returns the port-width declaration map (e.g. (  port "a" => (4,0)  ))
-let getPortWidthDeclarationMap items = 
+let getPortWidthDeclarationMap items paramBindings = 
     items 
     |> List.collect (fun x -> 
         match (x.IODecl |> isNullOrUndefined) with
@@ -832,7 +875,10 @@ let getPortWidthDeclarationMap items =
                 let size = 
                     match isNullOrUndefined d.Range with
                     | true -> (0,0)
-                    | false -> ((Option.get d.Range).Start |> int),((Option.get d.Range).End |> int)
+                    | false -> 
+                        let start_value = ConstantExpressionToInt ( (Option.get d.Range).Start) paramBindings
+                        let end_value = ConstantExpressionToInt ( (Option.get d.Range).End) paramBindings
+                        (start_value, end_value)
                 d.Variables 
                 |> Array.toList 
                 |> List.collect (fun x -> [(x.Name,size)]) 
@@ -893,13 +939,13 @@ let getdependentParameters (expr :ConstantExpressionT) =
             
        
 
-let getParameterMap items =
+let getParameterList items =
     items
     |> List.map(fun item -> Option.get item.ParamDecl)
     |> List.map(fun decl -> decl.ParameterAssignmentList)
     |> List.concat
-    |> List.map (fun assign -> (assign.ParameterIdentifier.Name, getdependentParameters assign.ParameterRHS))
-    |> Map.ofList
+    |> List.map (fun assign -> (assign.ParameterIdentifier.Name, (getdependentParameters assign.ParameterRHS, assign.ParameterIdentifier.Location)))
+
     
 let getInputSizeMap inputNameList portSizeMap =
     portSizeMap
@@ -958,7 +1004,44 @@ let getWireLocationMap items =
         | true -> [])
     |> Map.ofList
 
+let getParameterDeclarationError linesLocations parameterDecls = 
 
+    let parameter_dependence_list = getParameterList parameterDecls
+    let repeated_list = 
+        parameter_dependence_list
+        |> List.groupBy fst
+        |> List.choose (fun (k, group) -> if List.length group > 1 then Some k else None)
+
+    let parameter_dependence_map = 
+        parameter_dependence_list
+        |> Map.ofList
+
+    let cycle = 
+        parameter_dependence_map
+        |> Map.map (fun _ (deps, location) -> deps)
+        |> findCycleDFS
+    
+    if not repeated_list.IsEmpty then
+        let message = sprintf "Parameter '%s' is declared multiple times" (String.concat ", " repeated_list)
+        let extraMessages = 
+            [|{Text=(sprintf "Parameter '%s' is declared multiple times" (String.concat ", " repeated_list)); Copy=false; Replace=NoReplace}|]
+        let currentLocation = 
+            match Map.tryFind (List.head repeated_list) parameter_dependence_map with
+            | Some (_, loc) -> loc
+            | None -> 0 // fallback, should not happen
+        createErrorMessage linesLocations currentLocation message extraMessages "Parameter Declaration Error"
+    elif cycle.IsSome then
+        let cycleString = String.concat " -> " cycle.Value
+        let message = sprintf "Parameter cycle detected: %s" cycleString
+        let extraMessages = [|{Text="cycle detected in parameter declation: "+cycleString; Copy=false; Replace=NoReplace}|]
+        let currentLocation = 
+            match Map.tryFind (List.head cycle.Value) parameter_dependence_map with
+            | Some (_, loc) -> loc
+            | None -> 0 // fallback, should not happen
+        createErrorMessage linesLocations currentLocation message extraMessages "Parameter Cycle Error"
+    else
+        // no cycles, return empty error list
+        []
 
 /// Main error-finder function
 /// Returns a list of errors (type ErrorInfo)
@@ -966,78 +1049,100 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
     let (items: ItemT list) = ast.Module.ModuleItems.ItemList |> Array.toList
     ///////// STATIC MAPS, LISTS NEEDED  ////////////////
 
-    // map of parameters and their dependent parameters
-    let parameterMap = getParameterMap items
+    
+    // filter out parameter declarations
     let parameterDecls = items |> List.filter (fun item -> Option.isSome item.ParamDecl)
-    let paramBindings, parameterParseError = 
-        try
-            getParamBindings parameterDecls, []
-        with UnsupportedConstantExpression msg ->
-            let extraMsg = [|{Text=sprintf "Unsupported constant expression: %s" (fst msg); Copy=false; Replace=NoReplace}|]
-            Map.empty, createErrorMessage linesLocations (snd msg) (fst msg) extraMsg "Parameter Constant Expression Parsing Error"
+    // create a map of parameters with their dependent parameters
+    
+    let parameterDeclError = getParameterDeclarationError linesLocations parameterDecls
 
+    // Check if there is a cycle in the parameters, if so, return an error and stop parsing parameters
+    if not parameterDeclError.IsEmpty then
+        parameterDeclError
+    else
+        // no cycles, continue with parsing parameters
+        let paramBindings, parameterParseError = 
+            try
+                let paramBindings = getParamBindings parameterDecls
+                let parseError = []
+                let paramDefaulVal = // not needed but used for testing
+                    parameterDecls
+                    |> List.map(fun item -> Option.get item.ParamDecl)
+                    |> List.map(fun decl -> decl.ParameterAssignmentList)
+                    |> List.concat
+                    |> List.map (fun assignment -> ConstantExpressionToInt ( assignment.ParameterRHS) paramBindings)
+                    |> List.map(int)
+                paramBindings, parseError
+            with UnsupportedConstantExpression msg -> 
+                // if there is an error in parsing constant expressions, return it
+                let extraMsg = [|{Text=sprintf "Unsupported constant expression: %s" (fst msg); Copy=false; Replace=NoReplace}|]
+                Map.empty, createErrorMessage linesLocations (snd msg) (fst msg) extraMsg "Parameter Constant Expression Parsing Error"
+
+
+
+        let portMap  = getPortMap items
+        let portSizeMap,portLocationMap = getPortSizeAndLocationMap items paramBindings
+        let portWidthDeclarationMap = getPortWidthDeclarationMap items paramBindings
         
+        let notUniquePortDeclarations = getNotUniquePortDeclarations items
+        
+        let inputNameList: string list = getInputNames portMap
 
-    let portMap  = getPortMap items
-    let portSizeMap,portLocationMap = getPortSizeAndLocationMap items
-    let portWidthDeclarationMap = getPortWidthDeclarationMap items
-    
-    let notUniquePortDeclarations = getNotUniquePortDeclarations items
-    
-    let inputNameList: string list = getInputNames portMap
-
-    let wireSizeMap = getWireSizeMap items
-    let declarations = foldAST getDeclarations [] (VerilogInput(ast))
-    let wireSizeMap =
-        (wireSizeMap, declarations)
-        ||> List.fold (fun map decl ->
-            (map, decl.Variables)
-            ||> Array.fold (fun map' variable -> 
-                if isNullOrUndefined decl.Range then Map.add variable.Name 1 map'
-                else Map.add variable.Name ((Option.get(decl.Range).Start |> int)-(Option.get(decl.Range).End |> int)+1) map'
+        let wireSizeMap = getWireSizeMap items
+        let declarations = foldAST getDeclarations [] (VerilogInput(ast))
+        let wireSizeMap =
+            (wireSizeMap, declarations)
+            ||> List.fold (fun map decl ->
+                (map, decl.Variables)
+                ||> Array.fold (fun map' variable -> 
+                    if isNullOrUndefined decl.Range then Map.add variable.Name 1 map'
+                    else 
+                        let start_value = ConstantExpressionToInt  ( (Option.get decl.Range).Start) paramBindings
+                        let end_value = ConstantExpressionToInt  ( (Option.get decl.Range).End) paramBindings
+                        Map.add variable.Name (start_value-end_value+1) map'
+                )
             )
-        )
-    let wireNameList = getWireNames items
-    let wireLocationMap = getWireLocationMap items //need to add declarations
-    let wireLocationMap = 
-        (wireLocationMap, declarations)
-        ||> List.fold (fun (wireLocMap: Map<string, int>) (decl: DeclarationT) -> 
-                (wireLocMap, decl.Variables)
-                ||> Array.fold (fun map var -> Map.add var.Name var.Location map))
+        let wireNameList = getWireNames items
+        let wireLocationMap = getWireLocationMap items //need to add declarations
+        let wireLocationMap = 
+            (wireLocationMap, declarations)
+            ||> List.fold (fun (wireLocMap: Map<string, int>) (decl: DeclarationT) -> 
+                    (wireLocMap, decl.Variables)
+                    ||> Array.fold (fun map var -> Map.add var.Name var.Location map))
 
-    
         
-    //////////////////////////////////////////////
-    
-    let errors =
-        try 
-            parameterParseError
-            |> nameCheck ast linesLocations origin project //name is valid (not used by another sheet/component)
-            // check for if all constant expressions are non vector, and have only limited operations
-            // check for if all parameters are compile time determined and no cycles
-            // check if all remaining constant expressions are valid
-            |> portCheck ast linesLocations //all ports are declared as input/output
-            |> checkIODeclarations ast portWidthDeclarationMap portLocationMap linesLocations notUniquePortDeclarations portMap project //all ports declared as IO are defined in the module header
-            |> checkIOWidthDeclarations ast linesLocations //correct port width declaration (e.g. [1:4] -> invalid)
-            |> checkWiresAndAssignments ast portMap portSizeMap portWidthDeclarationMap inputNameList linesLocations wireNameList wireSizeMap wireLocationMap //checks 1-by-1 all assignments (wires & output ports)
-            |> checkAllOutputsAssigned ast portMap portSizeMap linesLocations //checks whether all output ports have been assined a value
-            |> checkUnsupportedKeywords ast linesLocations
-            |> checkProceduralAssignments ast linesLocations
-            |> checkVariablesDrivenSimultaneously ast linesLocations
-            |> checkVariablesAlwaysAssigned ast linesLocations portSizeMap wireSizeMap
-            |> checkCasesStatements ast linesLocations portSizeMap wireSizeMap
-            |> checkExpressions ast linesLocations wireSizeMap
-            |> checkClk ast linesLocations portMap
-            |> checkClkNames ast linesLocations portMap portLocationMap portSizeMap
-            |> cycleCheck ast linesLocations portSizeMap wireSizeMap
-            |> checkVariablesUsed ast linesLocations portSizeMap wireSizeMap
-            |> checkAlwaysCombRHS ast linesLocations portSizeMap wireSizeMap
-            |> checkAssignmentWidths ast linesLocations portSizeMap wireSizeMap
-            |> checkModuleInstantiations ast linesLocations portSizeMap wireSizeMap project portMap
-            |> checkInputsAssigned ast linesLocations portMap
-            |> List.distinct // filter out possible double Errors
-        with UnsupportedConstantExpression msg ->
-            // if there is an error in parsing constant expressions, return it
-            let extraMsg = [|{Text=sprintf "Unsupported constant expression: %s" (fst msg); Copy=false; Replace=NoReplace}|]
-            createErrorMessage linesLocations (snd msg) (fst msg) [||] "Constant Expression Parsing Error"
-    errors
+            
+        //////////////////////////////////////////////
+        
+        let errors =
+            try 
+                parameterParseError
+                |> nameCheck ast linesLocations origin project //name is valid (not used by another sheet/component)
+                // check for if all constant expressions are non vector, and have only limited operations
+                // check for if all parameters are compile time determined and no cycles
+                // check if all remaining constant expressions are valid
+                |> portCheck ast linesLocations //all ports are declared as input/output
+                |> checkIODeclarations ast portWidthDeclarationMap portLocationMap linesLocations notUniquePortDeclarations portMap paramBindings project //all ports declared as IO are defined in the module header
+                |> checkIOWidthDeclarations ast linesLocations paramBindings//correct port width declaration (e.g. [1:4] -> invalid)
+                |> checkWiresAndAssignments ast portMap portSizeMap portWidthDeclarationMap inputNameList linesLocations wireNameList wireSizeMap wireLocationMap paramBindings//checks 1-by-1 all assignments (wires & output ports)
+                |> checkAllOutputsAssigned ast portMap portSizeMap linesLocations //checks whether all output ports have been assined a value
+                |> checkUnsupportedKeywords ast linesLocations
+                |> checkProceduralAssignments ast linesLocations
+                |> checkVariablesDrivenSimultaneously ast linesLocations
+                |> checkVariablesAlwaysAssigned ast linesLocations portSizeMap wireSizeMap paramBindings
+                |> checkCasesStatements ast linesLocations portSizeMap wireSizeMap paramBindings
+                |> checkExpressions ast linesLocations wireSizeMap paramBindings
+                |> checkClk ast linesLocations portMap
+                |> checkClkNames ast linesLocations portMap portLocationMap portSizeMap
+                |> cycleCheck ast linesLocations portSizeMap wireSizeMap
+                |> checkVariablesUsed ast linesLocations portSizeMap wireSizeMap paramBindings
+                |> checkAlwaysCombRHS ast linesLocations portSizeMap wireSizeMap
+                |> checkAssignmentWidths ast linesLocations portSizeMap wireSizeMap
+                |> checkModuleInstantiations ast linesLocations portSizeMap wireSizeMap project portMap
+                |> checkInputsAssigned ast linesLocations portMap
+                |> List.distinct // filter out possible double Errors
+            with UnsupportedConstantExpression msg ->
+                // if there is an error in parsing constant expressions, return it
+                let extraMsg = [|{Text=sprintf "Unsupported constant expression: %s" (fst msg); Copy=false; Replace=NoReplace}|]
+                createErrorMessage linesLocations (snd msg) (fst msg) [||] "Constant Expression Parsing Error"
+        errors

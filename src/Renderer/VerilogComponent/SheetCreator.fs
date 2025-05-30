@@ -37,11 +37,11 @@ type BitMapping = {
 /////// HELPERS ////////
 
 /// Helper function to find a port's width from the range definition of IODecl
-let getWidthFromRange (range:RangeT option) = 
+let getWidthFromRange (range:RangeT option) (paramBindings: ParamBindings)= 
     match range with
     |None -> 1
     |Some r ->
-        let start = r.Start |> int
+        let start = ConstantExpressionToInt ( r.Start) paramBindings
         start+1
 
 /// Create a component (type: Component) based on the parameters given
@@ -305,9 +305,9 @@ let fixCanvasState (oldCanvasState:CanvasState) =
     |> fixConsecutiveWires
 /////// STATIC MAP CREATION ////////
 
-let createIOComponent (item:ItemT) ioType (oldMap)  =  
+let createIOComponent (item:ItemT) (paramBindings: ParamBindings) ioType (oldMap)  =  
     
-    let width = getWidthFromRange (Option.get item.IODecl).Range
+    let width = getWidthFromRange (Option.get item.IODecl).Range paramBindings
     let compType = 
         match ioType with
         |"input_declaration" -> Input1 (width,Some 0I)
@@ -327,10 +327,10 @@ let createIOComponent (item:ItemT) ioType (oldMap)  =
 /// Return a Map<string,Component> for input and output ports
 /// where string -> port name.
 /// It is necessary in order to find components when building circuits for assignments
-let getIOtoComponentMap (ioDecls:ItemT list) = 
+let getIOtoComponentMap (ioDecls:ItemT list) (paramBindings: ParamBindings) = 
     ([],ioDecls)
     ||> List.fold (fun map item ->
-        createIOComponent item item.ItemType map
+        createIOComponent item paramBindings item.ItemType map
     )
     |> Map.ofList
 
@@ -1373,7 +1373,7 @@ let createSheet input (project:Project)=
     let assignments = items |> List.filter (fun item -> Option.isSome item.Statement) 
     let wiresLHS = collectWiresLHS assignments // get declarations too
     let ioToCompMap = 
-        getIOtoComponentMap ioDecls 
+        getIOtoComponentMap ioDecls paramBindings
         |> Map.filter (fun var _ -> var <> "clk")   // for output ports make a wire label like for wires / we only need it for vars driven by continuous assigns though
     let inputs = 
         ioDecls
@@ -1388,7 +1388,7 @@ let createSheet input (project:Project)=
         ||> List.fold(fun map wire ->
             getWireToCompMap wire map
         )
-    let portSizeMap,_ = getPortSizeAndLocationMap items
+    let portSizeMap,_ = getPortSizeAndLocationMap items paramBindings
     let wireSizeMap = getWireSizeMap items
     let declarations = foldAST getDeclarations [] (VerilogInput input)
     let wireSizeMap =
@@ -1397,7 +1397,10 @@ let createSheet input (project:Project)=
             (map, decl.Variables)
             ||> Array.fold (fun map' variable -> 
                 if Option.isNone decl.Range then Map.add variable.Name 1 map'
-                else Map.add variable.Name ((Option.get(decl.Range).Start |> int)-(Option.get(decl.Range).End |> int)+1) map'
+                else 
+                    let start_value = ConstantExpressionToInt ( (Option.get decl.Range).Start) paramBindings
+                    let end_value = ConstantExpressionToInt ( (Option.get decl.Range).End) paramBindings
+                    Map.add variable.Name (start_value-end_value+1) map'
             )
         )
     let varSizeMap = Map.fold (fun acc key value -> Map.add key value acc) wireSizeMap portSizeMap

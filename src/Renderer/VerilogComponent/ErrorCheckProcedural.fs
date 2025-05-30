@@ -9,6 +9,7 @@ open NumberHelpers
 open Helpers
 open ConstantExpressionHelpers
 
+
 let rec private convert (lst:List<string>) acc =
     match lst with
     | [] -> acc
@@ -109,6 +110,7 @@ let checkVariablesDrivenSimultaneously
     errorList @ createErrorMessage linesLocations currLocation message extraMessages "endmodule"
         
 
+
 /// Checks the case items of the case statements:
 /// - Repeated cases
 /// - Wrong width
@@ -117,6 +119,7 @@ let checkCasesStatements
     (linesLocations: int list)
     (portSizeMap: Map<string,int>) 
     (wireSizeMap: Map<string,int>) 
+    (paramBindings: ParameterTypes.ParamBindings)
     (errorList: ErrorInfo list)
         : ErrorInfo list =
 
@@ -128,7 +131,10 @@ let checkCasesStatements
             (map, decl.Variables)
             ||> Array.fold (fun map' variable -> 
                 if isNullOrUndefined decl.Range then Map.add variable.Name 0 map'
-                else Map.add variable.Name ((Option.get(decl.Range).Start |> int)-(Option.get(decl.Range).End |> int)+1) map'
+                else 
+                    let start_value = ConstantExpressionToInt ( (Option.get(decl.Range).Start)) paramBindings
+                    let end_value = ConstantExpressionToInt ( (Option.get(decl.Range).End)) paramBindings
+                    Map.add variable.Name (start_value-end_value+1) map'
             )
         )
     let portSizeMap = Map.fold (fun acc key value -> Map.add key value acc) portSizeMap wireSizeMap
@@ -216,6 +222,7 @@ let checkVariablesAlwaysAssigned
     (linesLocations: int list)
     (portSizeMap: Map<string,int>) 
     (wireSizeMap: Map<string,int>) 
+    (paramBindings: ParameterTypes.ParamBindings)
     (errorList: ErrorInfo list)
         : ErrorInfo list =
 
@@ -227,7 +234,10 @@ let checkVariablesAlwaysAssigned
             (map, decl.Variables)
             ||> Array.fold (fun map' variable -> 
                 if isNullOrUndefined decl.Range then Map.add variable.Name 1 map'
-                else Map.add variable.Name ((Option.get(decl.Range).Start |> int)-(Option.get(decl.Range).End |> int)+1) map'
+                else 
+                    let start_value = ConstantExpressionToInt ( (Option.get(decl.Range).Start)) paramBindings
+                    let end_value = ConstantExpressionToInt ( (Option.get(decl.Range).End)) paramBindings
+                    Map.add variable.Name (start_value-end_value+1) map'
             )
         )
     let portSizeMap = Map.fold (fun acc key value -> Map.add key value acc) portSizeMap wireSizeMap
@@ -321,6 +331,7 @@ let checkExpressions
     (ast:VerilogInput) 
     (linesLocations: int list)
     (wireSizeMap: Map<string,int>) 
+    (paramBindings: ParameterTypes.ParamBindings)
     (errorList: ErrorInfo list) =
 
     let declarations = foldAST getDeclarations [] (VerilogInput(ast))
@@ -331,7 +342,10 @@ let checkExpressions
             (map, decl.Variables)
             ||> Array.fold (fun map' variable -> 
                 if isNullOrUndefined decl.Range then Map.add variable.Name 0 map'
-                else Map.add variable.Name ((Option.get(decl.Range).Start |> int)-(Option.get(decl.Range).End |> int)+1) map'
+                else 
+                    let start_value = ConstantExpressionToInt ( (Option.get(decl.Range).Start)) paramBindings
+                    let end_value = ConstantExpressionToInt ( (Option.get(decl.Range).End)) paramBindings
+                    Map.add variable.Name (start_value-end_value+1) map'
             )
         )
     let expressions = foldAST getAllExpressions' [] (VerilogInput ast)
@@ -577,6 +591,7 @@ let checkVariablesUsed
     (linesLocations: int list)
     (portSizeMap: Map<string,int>)
     (wireSizeMap: Map<string, int>)
+    (paramBindings: ParameterTypes.ParamBindings)
     (errorList: ErrorInfo list) =
 
     let wireAndPortSizeMap = Map.fold (fun acc key value -> Map.add key value acc) wireSizeMap portSizeMap
@@ -599,7 +614,10 @@ let checkVariablesUsed
                 let res = decl.Variables |> Array.map (fun var -> var.Name + "[0]") |> Array.toList
                 res
             | Some range -> 
-                let bits = [|int range.End .. int range.Start|]
+                let bits = 
+                    let start_value = ConstantExpressionToInt ( range.Start) paramBindings
+                    let end_value = ConstantExpressionToInt ( range.End) paramBindings
+                    [|end_value .. start_value|]
                 let res =
                     decl.Variables
                     |> Array.collect (fun var -> 
