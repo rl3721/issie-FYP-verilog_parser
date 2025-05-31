@@ -336,14 +336,17 @@ var grammar = {
     {"name": "PARAM_ASSIGNMENT", "symbols": ["IDENTIFIER", (lexer.has("op_assign") ? {type: "op_assign"} : op_assign), "CONSTANT_EXPRESSION"], "postprocess": function(d) {return {Type: "param_assignment", ParameterIdentifier: d[0], ParameterRHS:d[2]};}},
     {"name": "RANGE", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "_", "UNSIGNED_NUMBER", "_", (lexer.has("colon") ? {type: "colon"} : colon), "_", "UNSIGNED_NUMBER", "_", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d,l,reject) {
             // TODO: this is a temporary fix to handle range, fix this later when more constant expression is implemented
-            let start = {Type: "constant_expression", ConstantExpression: {Type: "unary", Location: d[0].offset, 
+            let start = {Type: "constant_expression", Location: d[0].offset, ConstantExpression: {Type: "unary", Location: d[0].offset, 
                 Unary:{Type: "number", Location: d[0].offset, 
                     Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[2], Location: d[0].offset}}}};
-            let end = {Type: "constant_expression", ConstantExpression: {Type: "unary", Location: d[4].offset,
+            let end = {Type: "constant_expression", Location: d[0].offset, ConstantExpression: {Type: "unary", Location: d[4].offset,
                 Unary:{Type: "number", Location: d[4].offset, 
                     Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[6], Location: d[4].offset}}}};
             // return {Type: "range", Start: d[2], End: d[6], Location: d[0].offset};
             return {Type: "range", Start: start, End: end, Location: d[0].offset};
+        } },
+    {"name": "RANGE", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("colon") ? {type: "colon"} : colon), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d,l,reject) {
+            return {Type: "range", Start: d[1], End: d[3], Location: d[0].offset};
         } }
 ]
   , ParserStart: "SOURCE_TEXT"

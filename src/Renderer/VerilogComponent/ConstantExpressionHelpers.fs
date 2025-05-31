@@ -108,7 +108,10 @@ let evaluateParamExpression (paramBindings: ParamBindings) (paramExpr: ParamExpr
         | PInt _ -> expr // constant, nothing needs to be changed
         | PParameter name -> 
             match Map.tryFind name paramBindings with
-            | Some evaluated -> evaluated
+            | Some evaluated -> 
+                // evaluated
+                recursiveEvaluation evaluated // recursively evaluate the parameter expression
+                // TODO: double check this is correct, this is modified for handling verilog parameters, check if it conflicts with other uses
             | None -> PParameter name
         | PAdd (left, right) ->
             match recursiveEvaluation left, recursiveEvaluation right with
@@ -158,11 +161,12 @@ let evaluateParamExpression (paramBindings: ParamBindings) (paramExpr: ParamExpr
 
 let ConstantExpressionToInt (expression:ConstantExpressionT) (param_bindings:ParamBindings) =
     let param_expr = ConstantExpressionToParamExpression (ConstantExpression expression)
+    printfn "Evaluating constant expression: %A" param_expr
     let evaluationResult = evaluateParamExpression param_bindings param_expr 
     match evaluationResult with
     | Ok value -> value
     | Error err -> 
-        printfn "Error evaluating constant expression: %s %i" err expression.Location
+        // printfn "Error evaluating constant expression: %s %i" err expression.Location
         raise (UnsupportedConstantExpression 
         (sprintf "Error evaluating constant expression: %s" err, expression.Location)) 
 

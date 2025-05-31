@@ -1077,7 +1077,7 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
                 // if there is an error in parsing constant expressions, return it
                 let extraMsg = [|{Text=sprintf "Unsupported constant expression: %s" (fst msg); Copy=false; Replace=NoReplace}|]
                 Map.empty, createErrorMessage linesLocations (snd msg) (fst msg) extraMsg "Parameter Constant Expression Parsing Error"
-
+        printfn "Parameter Bindings: %A" paramBindings
 
 
         let portMap  = getPortMap items
@@ -1090,18 +1090,7 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
 
         let wireSizeMap = getWireSizeMap items
         let declarations = foldAST getDeclarations [] (VerilogInput(ast))
-        let wireSizeMap =
-            (wireSizeMap, declarations)
-            ||> List.fold (fun map decl ->
-                (map, decl.Variables)
-                ||> Array.fold (fun map' variable -> 
-                    if isNullOrUndefined decl.Range then Map.add variable.Name 1 map'
-                    else 
-                        let start_value = ConstantExpressionToInt  ( (Option.get decl.Range).Start) paramBindings
-                        let end_value = ConstantExpressionToInt  ( (Option.get decl.Range).End) paramBindings
-                        Map.add variable.Name (start_value-end_value+1) map'
-                )
-            )
+        
         let wireNameList = getWireNames items
         let wireLocationMap = getWireLocationMap items //need to add declarations
         let wireLocationMap = 
@@ -1116,6 +1105,20 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
         
         let errors =
             try 
+                let wireSizeMap =
+                    (wireSizeMap, declarations)
+                    ||> List.fold (fun map decl ->
+                        (map, decl.Variables)
+                        ||> Array.fold (fun map' variable -> 
+                            if isNullOrUndefined decl.Range then Map.add variable.Name 1 map'
+                            else 
+                                let start_value = ConstantExpressionToInt  ( (Option.get decl.Range).Start) paramBindings
+                                let end_value = ConstantExpressionToInt  ( (Option.get decl.Range).End) paramBindings
+                                Map.add variable.Name (start_value-end_value+1) map'
+                        )
+                )
+                printfn "Wire Size Map: %A" wireSizeMap
+
                 parameterParseError
                 |> nameCheck ast linesLocations origin project //name is valid (not used by another sheet/component)
                 // check for if all constant expressions are non vector, and have only limited operations
@@ -1144,5 +1147,5 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
             with UnsupportedConstantExpression msg ->
                 // if there is an error in parsing constant expressions, return it
                 let extraMsg = [|{Text=sprintf "Unsupported constant expression: %s" (fst msg); Copy=false; Replace=NoReplace}|]
-                createErrorMessage linesLocations (snd msg) (fst msg) [||] "Constant Expression Parsing Error"
+                createErrorMessage linesLocations (snd msg) (fst msg) extraMsg "Constant Expression Parsing Error"
         errors

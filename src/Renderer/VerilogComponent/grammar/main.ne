@@ -210,14 +210,18 @@ PARAM_ASSIGNMENT # simplified to constant expression as minmaxtyp not supported
 RANGE -> %lbracket _ UNSIGNED_NUMBER _ %colon _ UNSIGNED_NUMBER _ %rbracket 
     {%function(d,l,reject) {
         // TODO: this is a temporary fix to handle range, fix this later when more constant expression is implemented
-        let start = {Type: "constant_expression", ConstantExpression: {Type: "unary", Location: d[0].offset, 
+        let start = {Type: "constant_expression", Location: d[0].offset, ConstantExpression: {Type: "unary", Location: d[0].offset, 
             Unary:{Type: "number", Location: d[0].offset, 
                 Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[2], Location: d[0].offset}}}};
-        let end = {Type: "constant_expression", ConstantExpression: {Type: "unary", Location: d[4].offset,
+        let end = {Type: "constant_expression", Location: d[0].offset, ConstantExpression: {Type: "unary", Location: d[4].offset,
             Unary:{Type: "number", Location: d[4].offset, 
                 Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[6], Location: d[4].offset}}}};
         // return {Type: "range", Start: d[2], End: d[6], Location: d[0].offset};
         return {Type: "range", Start: start, End: end, Location: d[0].offset};
+    } %}
+    | %lbracket CONSTANT_EXPRESSION %colon CONSTANT_EXPRESSION %rbracket 
+    {%function(d,l,reject) {
+        return {Type: "range", Start: d[1], End: d[3], Location: d[0].offset};
     } %}
 
 # 2.6 Function declarations

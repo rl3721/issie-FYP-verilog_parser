@@ -378,7 +378,7 @@ let updateParamSlot
     (exprSpec: ConstrainedExpr)
     (model: Model)
     : Model = 
-
+    printfn "Updating parameter slot %A with expression %A" slot exprSpec.Expression
     let paramSlots = 
         model
         |> get paramSlotsOfModel_
