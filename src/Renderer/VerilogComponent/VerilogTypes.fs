@@ -46,7 +46,7 @@ type RangeT = {Type: string; Start: ConstantExpressionT; End: ConstantExpression
 
 type IOItemT = {Type: string; DeclarationType: string; Range : RangeT option; Variables: IdentifierT array; Location: int}
 
-type AssignmentLHST = {Type: string; PrimaryType: string; BitsStart: string option; BitsEnd: string option; Primary: IdentifierT; VariableBitSelect: ExpressionT option; Width: int option}
+type AssignmentLHST = {Type: string; PrimaryType: string; BitsStart: ConstantExpressionT option; BitsEnd: ConstantExpressionT option; Primary: IdentifierT; VariableBitSelect: ExpressionT option; Width: int option}
 type AssignmentT = {Type: string; LHS: AssignmentLHST; RHS: ExpressionT}
 
 type ContinuousAssignT = {Type: string; StatementType: string; Assignment : AssignmentT; Location: int} // need to add seq block, option statement array

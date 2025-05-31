@@ -171,11 +171,12 @@ let rec joinWithMerge (lst:(Circuit*string*Slice*LHSType) list) =
 
 /// Extract MSB,LSB from assignment and return as a Slice
 /// type Slice = {MSB:int, LSB:int}
-let sliceFromBits (lhs:AssignmentLHST) (ioAndWireToCompMap: Map<string,Component>) varSizeMap = 
+let sliceFromBits (lhs:AssignmentLHST) (ioAndWireToCompMap: Map<string,Component>) paramBindings varSizeMap = 
     match (Option.isSome lhs.BitsStart) with
     |true -> 
-        let bStart = (Option.get lhs.BitsStart)
-        let bEnd = (Option.get lhs.BitsEnd)
+        let bStart = ConstantExpressionToInt (Option.get lhs.BitsStart) paramBindings
+
+        let bEnd = ConstantExpressionToInt (Option.get lhs.BitsEnd) paramBindings
         {MSB = (int bStart); LSB =(int bEnd) }
     |false ->
         let width = Map.find lhs.Primary.Name varSizeMap // TO DO: make it TryFind
@@ -985,7 +986,7 @@ let addAssignment (assignment: BitMapping) (bits: List<BitMapping>) varToCompMap
 
 /// returns a mapping from lhs variable name -> bits -> rhs final circuit
 /// maybe store the bits in a sorted array instead of a map
-let compileModule' node varToCompMap ioToCompMap varSizeMap=
+let compileModule' node varToCompMap ioToCompMap paramBindings varSizeMap=
     let rec compileModule (node: ASTNode) varToCompMap (currCircuits: Map<string, List<BitMapping>>) =
         match node with
         | VerilogInput input ->
@@ -1001,7 +1002,7 @@ let compileModule' node varToCompMap ioToCompMap varSizeMap=
             compileModule (Assignment contAssign.Assignment) varToCompMap currCircuits
         | Assignment assign -> 
             let outPort = assign.LHS.Primary.Name
-            let bits = sliceFromBits assign.LHS varToCompMap varSizeMap
+            let bits = sliceFromBits assign.LHS varToCompMap paramBindings varSizeMap
             let circuit = mainExpressionCircuitBuilder assign.RHS varToCompMap varSizeMap (bits.MSB-bits.LSB+1)
             let lhstype = 
                 match Map.tryFind outPort ioToCompMap with
@@ -1158,6 +1159,7 @@ let compileModule
     (varToCompMap: Map<string,Component>) 
     (ioToCompMap: Map<string,Component>) 
     (varSizeMap: Map<string,int>) 
+    (paramBindings: ParamBindings)
     initialCircuits 
     (initialParamSlot:ComponentSlotExpr) 
     (project:Project) 
@@ -1184,7 +1186,7 @@ let compileModule
             match assign.LHS.VariableBitSelect, assign.LHS.Width with
             | None, _ ->
                 let outPort = assign.LHS.Primary.Name
-                let bits = sliceFromBits assign.LHS varToCompMap varSizeMap // need different logic for variable indexed bit select
+                let bits = sliceFromBits assign.LHS varToCompMap paramBindings varSizeMap // need different logic for variable indexed bit select
                 let circuit = mainExpressionCircuitBuilder assign.RHS varToCompMap varSizeMap (bits.MSB-bits.LSB+1)
                 let currCircuit = 
                     match Map.tryFind outPort currCircuits with
@@ -1496,14 +1498,15 @@ let createSheet input (project:Project)=
             getWireToCompMap wire map
         )
     let portSizeMap,_ = getPortSizeAndLocationMap items paramBindings
-    let wireSizeMap = getWireSizeMap items
+    let wireSizeMap = getWireSizeMap items paramBindings
     let declarations = foldAST getDeclarations [] (VerilogInput input)
     let wireSizeMap =
         (wireSizeMap, declarations)
         ||> List.fold (fun map decl ->
             (map, decl.Variables)
             ||> Array.fold (fun map' variable -> 
-                if Option.isNone decl.Range then Map.add variable.Name 1 map'
+                if Option.isNone decl.Range then 
+                    Map.add variable.Name 1 map'
                 else 
                     let start_value = ConstantExpressionToInt ( (Option.get decl.Range).Start) paramBindings
                     let end_value = ConstantExpressionToInt ( (Option.get decl.Range).End) paramBindings
@@ -1556,7 +1559,7 @@ let createSheet input (project:Project)=
         |> List.collect (fun item -> (Option.get item.IODecl).Variables |> Array.toList)
         |> List.map (fun id -> (id.Name).ToUpper())
 
-    let compileModuleResult = compileModule (VerilogInput input) varToCompMap ioToCompMap varSizeMap initialCircuits initialParamSlots project
+    let compileModuleResult = compileModule (VerilogInput input) varToCompMap ioToCompMap varSizeMap paramBindings initialCircuits initialParamSlots project
 
     let perItemCircuits = 
         compileModuleResult

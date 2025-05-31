@@ -203,7 +203,7 @@ let rec renderParamExpression (expr: ParamExpression) (precedence:int) : string 
         "(" + renderParamExpression left currentPrecedence + "%" + renderParamExpression right currentPrecedence + ")" 
 
 
-let constantExpressionToString (expression:ExpressionNode) (param_bindings:ParamBindings) =
+let constantExpressionToString (expression:ExpressionNode) =
     let param_expr = ConstantExpressionToParamExpression expression
     renderParamExpression param_expr 0
 

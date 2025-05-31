@@ -6,6 +6,7 @@ open Fable.Core.JsInterop
 open CommonTypes
 open VerilogAST
 
+
 open NumberHelpers
 
 /// Helper function to create an ErrorInfo-type Error Message 
@@ -86,11 +87,14 @@ let rec primariesUsedInAssignment inLst (tree: ExpressionT) =
     | _ -> inLst
 
 /// replace this later with getLHSBits'!
-let getLHSBits portSizeMap (assignment: AssignmentT)  =
+let getLHSBits portSizeMap paramBindings (assignment: AssignmentT)  =
     let assignmentWithRange =
         match assignment.LHS with
         | a when isNullOrUndefined assignment.LHS.BitsStart -> (a.Primary.Name,-1,-1)
-        | a -> (a.Primary.Name,(int (Option.get a.BitsStart)),(int (Option.get a.BitsEnd)))
+        | a -> 
+            let start_val = int <| ConstantExpressionHelpers.ConstantExpressionToInt (Option.get a.BitsStart) paramBindings
+            let end_val = ConstantExpressionHelpers.ConstantExpressionToInt (Option.get a.BitsEnd) paramBindings
+            (a.Primary.Name,start_val, end_val)
     
     let portListMap =
         match assignmentWithRange with
@@ -110,11 +114,14 @@ let getLHSBits portSizeMap (assignment: AssignmentT)  =
 
 /// returns all the bits of the lhs of an assignment
 /// the strings returned are unique, index surrounded by "[]" is appended to the name of the variable
-let getLHSBits' portSizeMap (assignment: AssignmentT)  =
+let getLHSBits' portSizeMap paramBindings (assignment: AssignmentT)  =
     let assignmentWithRange =
         match assignment.LHS with
         | a when isNullOrUndefined assignment.LHS.BitsStart -> (a.Primary.Name,-1,-1)
-        | a -> (a.Primary.Name,(int (Option.get a.BitsStart)),(int (Option.get a.BitsEnd)))
+        | a -> 
+            let start_val = int <| ConstantExpressionHelpers.ConstantExpressionToInt (Option.get a.BitsStart) paramBindings
+            let end_val = ConstantExpressionHelpers.ConstantExpressionToInt (Option.get a.BitsEnd) paramBindings
+            (a.Primary.Name,start_val, end_val)
     
     let portListMap =
         match assignmentWithRange with
@@ -133,7 +140,7 @@ let getLHSBits' portSizeMap (assignment: AssignmentT)  =
     portListMap
 
 /// returns each bit of an assignment LHS. In the case of variable indexing, no bits are returned
-let getLHSBitsAssignedCertainly portSizeMap (assignment: AssignmentT) =
+let getLHSBitsAssignedCertainly portSizeMap paramBindings (assignment: AssignmentT) =
     match assignment.LHS.BitsStart, assignment.LHS.BitsEnd, assignment.LHS.VariableBitSelect with
     | None, None, None ->
         match Map.tryFind assignment.LHS.Primary.Name portSizeMap with
@@ -142,7 +149,9 @@ let getLHSBitsAssignedCertainly portSizeMap (assignment: AssignmentT) =
             names
         | None -> []
     | Some s, Some e, None ->
-        let names = [int e..int s] |> List.map (fun y -> (assignment.LHS.Primary.Name+"["+(string y)+"]"))
+        let s_val = int <| ConstantExpressionHelpers.ConstantExpressionToInt s paramBindings
+        let e_val = int <| ConstantExpressionHelpers.ConstantExpressionToInt e paramBindings
+        let names = [e_val.. s_val] |> List.map (fun y -> (assignment.LHS.Primary.Name+"["+(string y)+"]"))
         names
     | None, None, Some _ -> []
     | _ -> failwithf "Wrong combination of bitstart, bitsend and variable bitselect"
@@ -536,9 +545,13 @@ let getRHSBits portSizeMap expression=
 
     getExprBits expression
 
-let getLHSWidth (assign:AssignmentT) (varSizeMap: Map<string, int>)  =
+let getLHSWidth (assign:AssignmentT) (varSizeMap: Map<string, int>) paramBindings=
     match assign.LHS.BitsStart, assign.LHS.BitsEnd, assign.LHS.VariableBitSelect, assign.LHS.Width with
-    | Some s, Some e, _, _ -> (int s)-(int e)+1
+    
+    | Some s, Some e, _, _ -> 
+        let s_val = ConstantExpressionHelpers.ConstantExpressionToInt s paramBindings
+        let e_val = ConstantExpressionHelpers.ConstantExpressionToInt e paramBindings
+        (int s_val)-(int e_val)+1
     | None, None, None, _ -> 
         match Map.tryFind assign.LHS.Primary.Name varSizeMap with
         | Some size -> size

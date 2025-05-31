@@ -140,8 +140,35 @@ var grammar = {
     {"name": "PRIMARY", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "_", "UNSIGNED_NUMBER", "_", (lexer.has("colon") ? {type: "colon"} : colon), "_", "UNSIGNED_NUMBER", "_", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return {Type: "primary", PrimaryType: "identifier_bits", BitsStart: d[4], BitsEnd: d[8], Primary: d[0], Location: d[0].Location};}},
     {"name": "PRIMARY", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "_", "EXPRESSION", "_", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return {Type: "primary", PrimaryType: "identifier_bit2", BitsStart: null, BitsEnd: null, Primary: d[0], Expression: d[4], Width:1, Location: d[0].Location};}},
     {"name": "NET_LVALUE", "symbols": ["IDENTIFIER"], "postprocess": function(d) {return {Type: "l_value", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0]};}},
-    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "UNSIGNED_NUMBER", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[3], BitsEnd: d[3], Primary: d[0]};}},
-    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "UNSIGNED_NUMBER", (lexer.has("colon") ? {type: "colon"} : colon), "UNSIGNED_NUMBER", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: d[3], BitsEnd: d[5], Primary: d[0]};}},
+    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "UNSIGNED_NUMBER", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {
+        let start = {Type: "constant_expression", Location: d[2].offset, 
+            ConstantExpression: {Type: "unary", Location: d[2].offset,  
+                Unary:{Type: "number", Location: d[2].offset, 
+                    Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[3], Location: d[2].offset}}}};
+        return {Type: "l_value", PrimaryType: "identifier_bit", 
+            BitsStart: start, 
+            BitsEnd: start, 
+            Primary: d[0]};
+        } 
+                },
+    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "UNSIGNED_NUMBER", (lexer.has("colon") ? {type: "colon"} : colon), "UNSIGNED_NUMBER", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d){
+            let start = {Type: "constant_expression", Location: d[2].offset, 
+                ConstantExpression: {Type: "unary", Location: d[2].offset, 
+                    Unary:{Type: "number", Location: d[2].offset, 
+                        Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[3], Location: d[2].offset}}}};
+            let end = {Type: "constant_expression", Location: d[4].offset, 
+                ConstantExpression: {Type: "unary", Location: d[4].offset, 
+                    Unary:{Type: "number", Location: d[4].offset, 
+                        Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[5], Location: d[4].offset}}}};
+            return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: start, BitsEnd: end, Primary: d[0]};
+        }       
+        },
+    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", (lexer.has("Lbracket") ? {type: "Lbracket"} : Lbracket), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {
+        return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[2], BitsEnd: d[2], Primary: d[0], Expression: d[2], Width: 1};} 
+                },
+    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("colon") ? {type: "colon"} : colon), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {
+        return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: d[2], BitsEnd: d[4], Primary: d[0], Width: 1};} 
+                },
     {"name": "VARIABLE_LVALUE", "symbols": ["NET_LVALUE"], "postprocess": id},
     {"name": "VARIABLE_LVALUE", "symbols": ["VARIABLE_BITSELECT_L_VALUE"], "postprocess": id},
     {"name": "VARIABLE_BITSELECT_L_VALUE", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: null, BitsEnd: null, Primary: d[0], VariableBitSelect: d[3], Width: 1};}},

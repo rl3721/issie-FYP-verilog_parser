@@ -200,7 +200,7 @@ let checkIOWidthDeclarations (ast: VerilogInput) linesLocations paramBindings er
                     [|
                         {Text=(sprintf "A port's width can't be '[%i:%i]'\nCorrect form: [X:0]" startValue endValue)+temp;Copy=false;Replace=NoReplace}
                     |]
-                createErrorMessage linesLocations range.Location message extraMessages ((constantExpressionToString (ConstantExpression (range.Start)) paramBindings) + "[:0]")
+                createErrorMessage linesLocations range.Location message extraMessages ((constantExpressionToString (ConstantExpression (range.Start))) + "[:0]")
             else [] //CASE 2: No Errors
     )
     |> List.append errorList
@@ -244,6 +244,7 @@ let checkAllOutputsAssigned
     (portMap: Map<string,string>)
     (portSizeMap: Map<string,int>)  
     (linesLocations: int list)
+    (paramBindings: ParamBindings)
     (errorList: ErrorInfo list)
         : ErrorInfo list =
 
@@ -267,9 +268,11 @@ let checkAllOutputsAssigned
         | ContinuousAssign contAssign when isNullOrUndefined contAssign.Assignment.LHS.BitsStart ->
             vars@[(contAssign.Assignment.LHS.Primary.Name,-1,-1)]
         | ContinuousAssign contAssign -> 
+            let start_val = ConstantExpressionToInt (Option.get contAssign.Assignment.LHS.BitsStart) paramBindings
+            let end_val = ConstantExpressionToInt (Option.get contAssign.Assignment.LHS.BitsEnd) paramBindings
             [(contAssign.Assignment.LHS.Primary.Name,
-            (int (Option.get contAssign.Assignment.LHS.BitsStart)),
-            (int (Option.get contAssign.Assignment.LHS.BitsEnd)))]
+            (int start_val ),
+            (int end_val ))]
             |> List.append vars
         | BlockingAssign blocking -> vars@[blocking.Assignment.LHS.Primary.Name,-1,-1]
         | NonBlockingAssign nonblocking -> vars@[nonblocking.Assignment.LHS.Primary.Name,-1,-1]
@@ -496,8 +499,8 @@ let checkWiresAndAssignments
                 match isNullOrUndefined lhs.BitsStart with
                 |true -> localErrors // No errors
                 |false -> 
-                    let bStart = int <| Option.get lhs.BitsStart
-                    let bEnd = int <| Option.get lhs.BitsEnd
+                    let bStart = int <| ConstantExpressionToInt (Option.get lhs.BitsStart) paramBindings
+                    let bEnd = int <| ConstantExpressionToInt (Option.get lhs.BitsEnd) paramBindings
                     // CASE 3: Wrong Width declaration
                     if (bEnd <> 0 || bStart <= bEnd) then
                         let message = "Wrong width declaration"
@@ -567,7 +570,9 @@ let checkWiresAndAssignments
             | Some (bStart,bEnd) -> 
                 match isNullOrUndefined lhs.BitsStart with
                 | false ->
-                    if (bStart >= (int (Option.get lhs.BitsStart))) && (bEnd <= (int (Option.get lhs.BitsEnd))) then
+                    let start_val = int <| ConstantExpressionToInt (Option.get lhs.BitsStart) paramBindings
+                    let end_val = int <| ConstantExpressionToInt (Option.get lhs.BitsEnd) paramBindings
+                    if (bStart >= start_val) && (bEnd <= end_val) then
                         localErrors
                     else 
                         let name = lhs.Primary.Name
@@ -576,11 +581,13 @@ let checkWiresAndAssignments
                             |true -> " a single bit "
                             |false -> sprintf " %s[%i:0] " name (bStart)
                         let usedWidth, message =
+                            let start_string = constantExpressionToString (ConstantExpression (Option.get lhs.BitsStart)) 
+                            let end_string = constantExpressionToString (ConstantExpression (Option.get lhs.BitsEnd))
                             match lhs.BitsStart=lhs.BitsEnd with
                             |true -> 
-                                sprintf " %s[%s] " name (Option.get lhs.BitsStart), sprintf "Out of bounds index for variable '%s'" name
+                                sprintf " %s[%s] " name start_string, sprintf "Out of bounds index for variable '%s'" name
                             |false -> 
-                                sprintf " %s[%s:%s] " name (Option.get lhs.BitsStart) (Option.get lhs.BitsEnd), sprintf "Out of bounds range for variable '%s'" name
+                                sprintf " %s[%s:%s] " name start_string end_string, sprintf "Out of bounds range for variable '%s'" name
                         //let message = sprintf "Wrong width of variable: '%s'" name
                         let extraMessages = 
                             [|
@@ -783,6 +790,7 @@ let checkAssignmentWidths
     (linesLocations: int list)
     (portSizeMap: Map<string,int>)
     (wireSizeMap: Map<string,int>)
+    (paramBindings: ParamBindings)
     (errorList: ErrorInfo list) =
 
     let wireAndPortSizeMap = Map.fold (fun acc key value -> Map.add key value acc) wireSizeMap portSizeMap
@@ -792,7 +800,7 @@ let checkAssignmentWidths
         assignments
         |> List.collect (fun (assign, loc) ->
             let rhsW = getWidthOfExpr assign.RHS wireAndPortSizeMap
-            let lhsW = getLHSWidth assign wireAndPortSizeMap 
+            let lhsW = getLHSWidth assign wireAndPortSizeMap paramBindings
             if rhsW > lhsW then
                 let message = sprintf "The RHS expression (%A bits wide) doesn't fit in the variable on the LHS (%A bits wide)" rhsW lhsW
                 let extraMessages = 
@@ -960,7 +968,7 @@ let getInputNames portMap =
 
 
 /// Returns the names of the declared WIRES
-let getWireSizeMap items = 
+let getWireSizeMap items paramBindings = 
     items 
     |> List.collect (fun x -> 
         match (x.Statement |> isNullOrUndefined) with
@@ -971,7 +979,9 @@ let getWireSizeMap items =
                 match isNullOrUndefined lhs.BitsStart with
                 |true  -> [lhs.Primary.Name,1]
                 |false -> 
-                    let size = ((Option.get lhs.BitsStart) |> int) - ((Option.get lhs.BitsEnd) |> int) + 1
+                    let start_value = ConstantExpressionToInt (Option.get lhs.BitsStart) paramBindings
+                    let end_value = ConstantExpressionToInt (Option.get lhs.BitsEnd) paramBindings
+                    let size = (start_value |> int) - (end_value |> int) + 1
                     [lhs.Primary.Name,size]
             | _ -> []
         | true -> [])
@@ -1088,7 +1098,7 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
         
         let inputNameList: string list = getInputNames portMap
 
-        let wireSizeMap = getWireSizeMap items
+        let wireSizeMap = getWireSizeMap items paramBindings
         let declarations = foldAST getDeclarations [] (VerilogInput(ast))
         
         let wireNameList = getWireNames items
@@ -1128,7 +1138,7 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
                 |> checkIODeclarations ast portWidthDeclarationMap portLocationMap linesLocations notUniquePortDeclarations portMap paramBindings project //all ports declared as IO are defined in the module header
                 |> checkIOWidthDeclarations ast linesLocations paramBindings//correct port width declaration (e.g. [1:4] -> invalid)
                 |> checkWiresAndAssignments ast portMap portSizeMap portWidthDeclarationMap inputNameList linesLocations wireNameList wireSizeMap wireLocationMap paramBindings//checks 1-by-1 all assignments (wires & output ports)
-                |> checkAllOutputsAssigned ast portMap portSizeMap linesLocations //checks whether all output ports have been assined a value
+                |> checkAllOutputsAssigned ast portMap portSizeMap linesLocations paramBindings //checks whether all output ports have been assined a value
                 |> checkUnsupportedKeywords ast linesLocations
                 |> checkProceduralAssignments ast linesLocations
                 |> checkVariablesDrivenSimultaneously ast linesLocations
@@ -1137,10 +1147,10 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
                 |> checkExpressions ast linesLocations wireSizeMap paramBindings
                 |> checkClk ast linesLocations portMap
                 |> checkClkNames ast linesLocations portMap portLocationMap portSizeMap
-                |> cycleCheck ast linesLocations portSizeMap wireSizeMap
+                |> cycleCheck ast linesLocations portSizeMap wireSizeMap paramBindings
                 |> checkVariablesUsed ast linesLocations portSizeMap wireSizeMap paramBindings
-                |> checkAlwaysCombRHS ast linesLocations portSizeMap wireSizeMap
-                |> checkAssignmentWidths ast linesLocations portSizeMap wireSizeMap
+                |> checkAlwaysCombRHS ast linesLocations portSizeMap wireSizeMap paramBindings
+                |> checkAssignmentWidths ast linesLocations portSizeMap wireSizeMap paramBindings
                 |> checkModuleInstantiations ast linesLocations portSizeMap wireSizeMap project portMap
                 |> checkInputsAssigned ast linesLocations portMap
                 |> List.distinct // filter out possible double Errors

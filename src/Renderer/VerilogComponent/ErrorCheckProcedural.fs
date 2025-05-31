@@ -260,8 +260,8 @@ let checkVariablesAlwaysAssigned
             let elseVariables =
                 getVariablesAlwaysAssigned (Statement (Option.get ifstmt.ElseStatement))
             Set.intersect ifVariables elseVariables
-        | BlockingAssign blocking -> (getLHSBitsAssignedCertainly portSizeMap blocking.Assignment) |> Set.ofList // fix getLHSBits
-        | NonBlockingAssign nonBlocking -> (getLHSBitsAssignedCertainly portSizeMap nonBlocking.Assignment) |> Set.ofList // fix getLHSBits
+        | BlockingAssign blocking -> (getLHSBitsAssignedCertainly portSizeMap paramBindings blocking.Assignment) |> Set.ofList // fix getLHSBits
+        | NonBlockingAssign nonBlocking -> (getLHSBitsAssignedCertainly portSizeMap paramBindings nonBlocking.Assignment) |> Set.ofList // fix getLHSBits
         | Item item -> getVariablesAlwaysAssigned (getItem item)
         | AlwaysConstruct always -> 
             getVariablesAlwaysAssigned (Statement always.Statement)
@@ -300,7 +300,7 @@ let checkVariablesAlwaysAssigned
         |> List.map (fun (always, loc) -> 
             let allLHSVariables = 
                 foldAST getAssignments' [] (AlwaysConstruct always)
-                |> List.collect (getLHSBits' portSizeMap)
+                |> List.collect (getLHSBits' portSizeMap paramBindings)
                 |> Set.ofList
             let variablesNotAssignedInAllBranches =
                 getVariablesAlwaysAssigned (AlwaysConstruct always)
@@ -491,7 +491,7 @@ let findCycleDFS (graph: Graph) : string list option =
 /// Returns the dependency graph of the AST.
 /// In an assignment, RHS variables are dependencies of the LHS variable.
 /// Condition expressions are also dependencies of the variables assigned to in the block
-let private getDependencies ast variableSizeMap =
+let private getDependencies ast paramBindings variableSizeMap  =
     let rec getDependencyFold graph astNode cond =
         match astNode with
         | VerilogInput verilogInput -> getDependencyFold graph (ModuleItems verilogInput.Module.ModuleItems) cond
@@ -502,7 +502,7 @@ let private getDependencies ast variableSizeMap =
         | Item item -> getDependencyFold graph (getItem item) cond
         | ContinuousAssign contAssign -> getDependencyFold graph (Assignment contAssign.Assignment) cond
         | Assignment assign -> 
-            let lhsBits = getLHSBits' variableSizeMap assign
+            let lhsBits = getLHSBits' variableSizeMap paramBindings assign 
             let rhsBits = 
                 match assign.LHS.VariableBitSelect with
                 | Some expr -> Set.union (getRHSBits variableSizeMap assign.RHS)  (getRHSBits variableSizeMap expr)
@@ -566,12 +566,13 @@ let cycleCheck
     (linesLocations: int list)
     (portSizeMap: Map<string,int>)
     (wireSizeMap: Map<string, int>)
+    (paramBindings: ParameterTypes.ParamBindings)
     (errorList: ErrorInfo list) =
     // set up dependencies for individual bits
     
     let wireAndPortSizeMap = Map.fold (fun acc key value -> Map.add key value acc) wireSizeMap portSizeMap
     // dependency graph is a map: variablename[bit] -> List(dependencies), lhs -> rhs
-    let dependencyGraph = getDependencies (VerilogInput ast) wireAndPortSizeMap
+    let dependencyGraph = getDependencies (VerilogInput ast) paramBindings wireAndPortSizeMap
     let cycle = findCycleDFS dependencyGraph
 
     match cycle with
@@ -602,7 +603,7 @@ let checkVariablesUsed
         |> Set.ofList
     let assignmentsLHS = 
         foldAST getAssignments' [] (VerilogInput ast)
-        |> List.collect (fun assign -> getLHSBits' wireAndPortSizeMap assign)
+        |> List.collect (fun assign -> getLHSBits' wireAndPortSizeMap paramBindings assign)
         |> Set.ofList
         |> Set.union moduleInstantiationPorts
 
@@ -645,10 +646,10 @@ let checkVariablesUsed
         errorList @ createErrorMessage linesLocations location message extraMessages "endmodule"
 
 /// Helper function for checking if any variable or port being written to after it is read in always_comb blocks.
-let rec getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars, errors) node =
+let rec getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars, errors) node =
     match node with
     | Assignment assign -> 
-        let lhsBits = getLHSBits' wireAndPortSizeMap assign |> Set.ofList
+        let lhsBits = getLHSBits' wireAndPortSizeMap paramBindings assign |> Set.ofList
         let rhsBits = getRHSBits wireAndPortSizeMap assign.RHS
         let assignedAfterRHS =  Set.intersect lhsBits rhsVars
         let rhsVars' = Set.union rhsVars rhsBits
@@ -670,27 +671,27 @@ let rec getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars,
             (rhsVars', errors')
     | Conditional cond ->  
         let ifVars, ifErrors = 
-            getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars, List.empty) (IfStatement cond.IfStatement)
+            getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars, List.empty) (IfStatement cond.IfStatement)
         let elseVars, elseErrors =
             match cond.ElseStatement with
-            | Some stmt -> getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars, List.empty) (Statement stmt)
+            | Some stmt -> getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars, List.empty) (Statement stmt)
             | _ -> Set.empty, []
         (Set.union ifVars elseVars), errors @ ifErrors @ elseErrors
     | IfStatement ifstmt ->
         let rhsVars' = 
             getRHSBits wireAndPortSizeMap ifstmt.Condition
             |> Set.union rhsVars
-        getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars', errors) (Statement ifstmt.Statement)
+        getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars', errors) (Statement ifstmt.Statement)
     | Case case ->
         let caseVars, caseErrors=
             case.CaseItems
             |> Array.map (fun (item: CaseItemT) -> 
-                getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars, List.empty) (Statement item.Statement))
+                getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars, List.empty) (Statement item.Statement))
             |> Array.toList
             |> List.unzip
         let defaultVars, defaultErrors=
             match case.Default with
-            | Some stmt -> getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars, List.empty) (Statement stmt)
+            | Some stmt -> getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars, List.empty) (Statement stmt)
             | _ -> Set.empty, []
         let rhsVars' = List.fold Set.union Set.empty (caseVars @ [defaultVars])
         let errors' = List.fold List.append [] caseErrors @ defaultErrors
@@ -698,20 +699,20 @@ let rec getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars,
     | SeqBlock seq -> 
         seq.Statements
         |> Array.map (fun stmt -> Statement stmt)
-        |> Array.fold (getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations) (rhsVars, errors)
+        |> Array.fold (getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations) (rhsVars, errors)
     | Statement stmt ->
         getAlwaysStatement stmt
         |> statementToNode
-        |> getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars, errors)
+        |> getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars, errors)
     | BlockingAssign blocking -> 
         Assignment blocking.Assignment
-        |> getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars, errors)
+        |> getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars, errors)
     | NonBlockingAssign nonblocking ->
         Assignment nonblocking.Assignment
-        |> getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars, errors)
+        |> getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars, errors)
     | AlwaysConstruct always -> 
         Statement always.Statement
-        |> getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (rhsVars, errors)
+        |> getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars, errors)
     | _ -> rhsVars, errors
 
 
@@ -722,6 +723,7 @@ let checkAlwaysCombRHS
     (linesLocations: int list)
     (portSizeMap: Map<string,int>)
     (wireSizeMap: Map<string, int>)
+    (paramBindings: ParameterTypes.ParamBindings)
     (errorList: ErrorInfo list) =
 
     let wireAndPortSizeMap = Map.fold (fun acc key value -> Map.add key value acc) wireSizeMap portSizeMap
@@ -730,7 +732,7 @@ let checkAlwaysCombRHS
         |> List.filter (fun always -> always.AlwaysType="always_comb")
     
     let checkAlwaysComb (always: AlwaysConstructT) =
-        getVariablesWrittenAfterRead wireAndPortSizeMap linesLocations (Set.empty, []) (AlwaysConstruct always)
+        getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (Set.empty, []) (AlwaysConstruct always)
         |> snd
     
     let localErrors =
