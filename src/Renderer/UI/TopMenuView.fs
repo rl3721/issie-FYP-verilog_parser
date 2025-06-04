@@ -58,7 +58,7 @@ let updateVerilogFileAction newCS newParameterDefs name model (dispatch: Msg -> 
         let (SheetInfo:SheetInfo option) =
             match origLdComp.Form with
             |None -> None
-            |Some form -> Some {Form=Some form;Description=origLdComp.Description; ParameterDefinitions=origLdComp.LCParameterSlots}
+            |Some form -> Some {Form=Some form;Description=origLdComp.Description; ParameterDefinitions=Some newParameterDefs}
         let (newLdc, ramCheck) = makeLoadedComponentFromCanvasData newCS origLdComp.FilePath DateTime.Now savedWaveSim SheetInfo
         let newState =
             newCS
