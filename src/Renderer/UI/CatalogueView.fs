@@ -724,7 +724,8 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                         let result = Option.get output.Result
                         let fixedAST = fix result
                         let linesIndex = Option.get output.NewLinesIndex |> Array.toList
-                        let parsedAST = fixedAST |> Json.parseAs<VerilogInput>                        
+                        let parsedAST = fixedAST |> Json.parseAs<VerilogInput>   
+                        // let unrolledAST, unrollingErrors = VerilogUnroller.unrollVerilog parsedAST                     
                         let moduleName = parsedAST.Module.ModuleName.Name
                         let errorList = ErrorCheck.getSemanticErrors parsedAST linesIndex origin project
                         let dataUpdated = {dialogData with VerilogErrors = errorList; VerilogCode=Some code}

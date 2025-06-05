@@ -93,7 +93,7 @@ MODULE_OR_GENERATE_ITEM
     | ALWAYS_CONSTRUCT {%function(d,l, reject) {return {Type: "module_item", ItemType: "always_construct", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: d[0], Location: d[0].Location};} %}
     | MODULE_INSTANTIATION _ {%function(d,l, reject) { return {Type: "module_item", ItemType: "module_instantiation", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: null, ModuleInstantiation: d[0], Location: d[0].Module.Location};} %}
     # LOOP_GENERATE_CONSTRUCT # TODO: add support for loop generate construct
-    # CONDITIONAL_GENERATE_CONSTRUCT # TODO: add support for conditional generate construct
+    | CONDITIONAL_GENERATE_CONSTRUCT {% id %}
     
 # subset of non port module items, declarations of nets and regs, logic declaration is part of SystemVerilog that is added
 # data types of int, time, etc are not implemented 
@@ -101,12 +101,12 @@ MODULE_OR_GENERATE_IETM_DECLARATION
     -> LOGIC_DECLARATION _ {%function(d,l, reject) {return {Type: "module_item", ItemType: "logic_declaration", IODecl: null, Decl: d[0], Statement: null, AlwaysConstruct: null,Location: d[0].Location};} %}
     # REG_DECLARATION # TODO: add support for reg declaration
     # NET_DECLARATION # TODO: add support for net declaration
-    # GENVAR_DECLARATION # TODO: add support for genvar declaration
+    | GENVAR_DECLARATION {% id %}# TODO: add support for genvar declaration
     
 # token for module of new style declaration, specify block and associated specparam not implemented
 NON_PORT_MODULE_ITEM
     -> MODULE_OR_GENERATE_ITEM {% id %}
-    # | GENERATE_REGION # TODO: add support for generate region
+    | GENERATE_REGION {% id %} # TODO: add support for generate region
     | PARAMETER_DECLARATION %semicolon #{% (d) => {return d[0];} %}
     {% (d) => {return {Type:"module_item", ItemType: "parameter_declaration", ParamDecl: d[0], Location: d[0].Location};}%}
 

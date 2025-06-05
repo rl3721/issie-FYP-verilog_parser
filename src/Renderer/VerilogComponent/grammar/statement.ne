@@ -7,17 +7,21 @@
 
 # TODO: support this with parameterized modules
 # module instance with range not supported
-MODULE_INSTANTIATION -> IDENTIFIER _ IDENTIFIER _ %lparen _ LIST_OF_PORT_CONNECTIONS _ %rparen _ %semicolon {%(d) => {return {Type: "module_instantiation", Module: d[0], Identifier: d[2], Connections: d[6]}}%}
+MODULE_INSTANTIATION -> IDENTIFIER PARAMETER_VALUE_ASSIGNMENT:? IDENTIFIER _ %lparen _ LIST_OF_PORT_CONNECTIONS _ %rparen _ %semicolon 
+    {%(d) => {return {Type: "module_instantiation", Module: d[0], Identifier: d[2], Connections: d[6], ParamOverrides: d[1]}}%}
 
-# PARAMETER_VALUE_ASSIGNMENT # TODO: support this with parameterized modules
+PARAMETER_VALUE_ASSIGNMENT # TODO: support this with parameterized modules
+    -> %hash %lparen LIST_OF_PARAMTER_ASSIGNMENT %rparen {% (d) => {return d[2];}%}
 
-# LIST_OF_PARAMTER_ASSIGNMENT # TODO: support this with parameterized modules
+LIST_OF_PARAMTER_ASSIGNMENT # TODO: support this with parameterized modules
+    -> NAMED_PARAMETER_ASSIGNMENT (_ %comma _ NAMED_PARAMETER_ASSIGNMENT {%(d)=> {return d[3];}%}):* _ 
+        {%(d) => {return [d[0]].concat(d[1]);}%}
 
 # ORDERED_PARAMETER_ASSIGNMENT
 # issie sheet doesn't keep track of order of parameters or ports, hence not implementable though can be refactored for furture 
 
-# NAMED_PARAMETER_ASSIGNMENT
-# TODO: support this with parameterized modules
+NAMED_PARAMETER_ASSIGNMENT
+    -> %dot _ IDENTIFIER _ %lparen _ CONSTANT_EXPRESSION _ %rparen {% (d) => {return {Type: "named_parameter_assignment", ParameterId: d[2], MinTypExpr: d[6]}}%}
 
 # MODULE_INSTANCE 
 # symbol ommitted and built as part of module instantiation grammar
@@ -34,14 +38,41 @@ NAMED_PORT_CONNECTION ->
         %dot _ IDENTIFIER _ %lparen _ MODULE_INSTANTIATION_PRIMARY _ %rparen {% (d) => {return {Type: "named_port_connection", PortId: d[2], Primary: d[6]}}%}
 
 MODULE_INSTANTIATION_PRIMARY #TODO: allow more general type
-    -> IDENTIFIER {%function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0]};} %}
-    | IDENTIFIER _ %lbracket UNSIGNED_NUMBER %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit", BitsStart: d[3], BitsEnd: d[3], Primary: d[0]};} %}
-    | IDENTIFIER _ %lbracket UNSIGNED_NUMBER %colon UNSIGNED_NUMBER %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bits", BitsStart: d[3], BitsEnd: d[5], Primary: d[0]};} %}
+    -> IDENTIFIER {%function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], Location: d[0].Location};} %}
+    | IDENTIFIER _ %lbracket UNSIGNED_NUMBER %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit", BitsStart: d[3], BitsEnd: d[3], Primary: d[0], Location: d[0].Location};} %}
+    | IDENTIFIER _ %lbracket UNSIGNED_NUMBER %colon UNSIGNED_NUMBER %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bits", BitsStart: d[3], BitsEnd: d[5], Primary: d[0], Location: d[0].Location};} %}
 
 #### 4.2 Generate construct ####
-# TODO
+GENERATE_REGION
+    -> %generate MODULE_OR_GENERATE_ITEM:+ %endgenerate _ 
+        {%function(d) {
+        return {Type: "item", ItemType: "generate_region", GenerateRegion: d[1], Location: d[0].offset};} %}
 
+GENVAR_DECLARATION
+    -> %genvar IDENTIFIER %semicolon _ 
+        {%function(d) {
+        return {Type: "item", ItemType: "genvar_declaration", GenVarId: d[1], Location: d[0].offset};} %}
+    
+CONDITIONAL_GENERATE_CONSTRUCT
+    -> IF_GENERATE_CONSTRUCT {% id %}
 
+IF_GENERATE_CONSTRUCT
+    -> %t_if %lparen CONSTANT_EXPRESSION %rparen GENERATE_BLOCK_OR_NULL 
+        (%t_else GENERATE_BLOCK_OR_NULL {% 
+            function(d) {return d[1];} %}):?
+    {%function(d) {
+        let conditional = d[2];
+        let if_block = d[4];
+        let else_block = (d[5] == null) ? [] : d[5];
+        let if_generate_construct = {Type: "if_generate_construct", Condition: d[2], IfBlock: if_block, ElseBlock: else_block, Location: d[0].offset};
+        return {Type: "item", ItemType: "if_generate_construct", IfGenerateConstruct: if_generate_construct, Location: d[0].offset};} %}
+
+GENERATE_BLOCK_OR_NULL
+    -> MODULE_OR_GENERATE_ITEM {% function(d) {return [d[0]];} %}
+    | %begin _ MODULE_OR_GENERATE_ITEM:+ %end _ 
+        {% function(d) {return d[2];} %}
+    | %semicolon {% function(d,l,reject) {return [];} %}
+        
 ######################### 5. UDP declarartion and instantiation #########################
 # not implemented UDP not supported
 

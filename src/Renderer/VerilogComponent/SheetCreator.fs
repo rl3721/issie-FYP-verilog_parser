@@ -458,48 +458,6 @@ let createPrimaryCircuit (primary:PrimaryT) (ioAndWireToCompMap:Map<string,Compo
 
         let conn = createConnection inputComp.OutputPorts[0] busSelComp.InputPorts[0]
 
-        // let start_param = ConstantExpressionToParamExpression (ConstantExpression r.Start)
-        // let end_param: ParamExpression = ConstantExpressionToParamExpression (ConstantExpression r.End)
-        // printf "Start param: %A, End param: %A\n" start_param end_param
-        // let start_slot_expr = 
-        //     match start_param with
-        //     | PInt n -> []
-        //     | _ -> 
-        //         let start_constrained_expr = 
-        //             {
-        //                 Expression = start_param;
-        //                 Constraints=[MinVal (PInt 1, "" )]
-        //             }
-        //         decl.Variables
-        //         |> Array.choose (fun name ->
-        //             ioToCompMap 
-        //             |> Map.tryFind name.Name 
-        //             |> Option.map (fun comp -> (comp.Id, IO (name.Name.ToUpper()))) // use uppercase for IO names, as issie defaults to it
-        //             )
-        //         |> Array.map (fun (id, slot_name) -> ({CompId=id; CompSlot=slot_name}, start_constrained_expr))
-        //         |> Array.toList
-        //     let end_slot_expr =
-        //         match end_param with
-        //         | PInt n -> []
-        //         | _ -> 
-        //             let end_constrained_expr = 
-        //                 {
-        //                     Expression = end_param;
-        //                     Constraints=[MinVal (PInt 1, "" )]
-        //                 }
-        //             decl.Variables
-        //             |> Array.choose (fun name ->
-        //                 ioToCompMap 
-        //                 |> Map.tryFind name.Name 
-        //                 |> Option.map (fun comp -> (comp.Id, IO (name.Name.ToUpper())))
-        //                 )
-        //             |> Array.map (fun (id, slot_name) -> ({CompId=id; CompSlot=slot_name}, end_constrained_expr))
-        //             |> Array.toList
-        //     printf "Start slot expr: %A, End slot expr: %A\n" start_slot_expr end_slot_expr
-        //     start_slot_expr @ end_slot_expr
-        //     |> Map.ofList
-        // | _ -> Map.empty
-
         {Comps=[busSelComp];Conns=[conn];Out=busSelComp.OutputPorts[0];OutWidth=outWidth}
 
 /// Creates the correct component based on the number and returns a circuit with that component
@@ -1430,6 +1388,36 @@ let compileModule
                 match List.tryFind (fun comp -> comp.Name = modInst.Module.Name) project.LoadedComponents with
                     | Some comp -> comp
                     | _ -> failwithf "No such loaded component found, this should never happen %s" modInst.Module.Name
+            let instantiation_paramBindings = 
+                match modInst.ParamOverrides with
+                | Some overrides -> 
+                    overrides
+                    |> List.map (fun p ->
+                        let paramName = ParamName p.ParameterId.Name
+                        let paramExpr = ConstantExpressionToParamExpression (ConstantExpression p.MinTypExpr)
+                        ( paramName, paramExpr)
+                    )
+                    |> Map.ofList
+                | None -> Map.empty
+            let LC_paramBindings = 
+                match loadedComp.LCParameterSlots with
+                | Some defs -> Some defs.DefaultBindings
+                | None -> None
+            let LC_paramBindings = 
+                match LC_paramBindings with
+                | Some bindings -> 
+                    bindings
+                    |> Map.map (fun key paramExpr ->
+                        if Map.containsKey key instantiation_paramBindings then
+                            let expr = Map.find key paramBindings
+                            match expr with
+                            | PInt n -> PInt n // if the parameter is already bound, use that value
+                            | _ -> paramExpr // otherwise use the default binding from the loaded component
+                        else
+                            paramExpr // if no binding exists, use the default binding from the loaded component
+                    )
+                    |> Some
+                | None -> None
             let (customCompType: CustomComponentType) =
                 {
                     Name=modInst.Module.Name;
@@ -1437,9 +1425,22 @@ let compileModule
                     OutputLabels=loadedComp.OutputLabels;
                     Form=None;
                     Description=None;
-                    ParameterBindings = None
+                    ParameterBindings = LC_paramBindings
                 }
             let comp = createComponent (Custom customCompType) modInst.Identifier.Name
+
+            let new_param_slot = 
+                match modInst.ParamOverrides with
+                | Some overrides -> 
+                    overrides
+                    |> List.map (fun p ->
+                        let paramName = ParamName p.ParameterId.Name
+                        let paramExpr = ConstantExpressionToParamExpression (ConstantExpression p.MinTypExpr)
+                        let compSlot = CustomCompParam (p.ParameterId.Name) // use uppercase for IO names, as issie defaults to it
+                        ({CompId=comp.Id; CompSlot=compSlot}, {Expression=paramExpr; Constraints=[]})
+                    )
+                    |> Map.ofList
+                | None -> Map.empty
             let portLabels = loadedComp.InputLabels@loadedComp.OutputLabels
             let connections =
                 modInst.Connections
@@ -1457,6 +1458,12 @@ let compileModule
 
             let topCircuit = {Conns=[]; Comps= [comp]; Out=comp.OutputPorts[0]; OutWidth=0}
             let inputCircuit = joinCircuits inputCircuits comp.InputPorts topCircuit
+
+            let new_param_slot =
+                (currentParamSlot, new_param_slot)
+                ||> Map.fold (fun acc k v ->
+                    Map.add k v acc // overwrites the old expression if present
+                )
             (currCircuits, List.zip outputPrimaries comp.OutputPorts) 
             ||> List.fold (fun circuits (primary, port) ->
                 let outPort = primary.Primary.Name
@@ -1477,7 +1484,7 @@ let compileModule
                 let newCircuit = joinWithMerge' (LSBs @ [circuit] @ MSBs)
                 Map.add outPort newCircuit circuits
 
-            ), currentParamSlot
+            ), new_param_slot //this doesn't actually work yet, for custome components parameters
         | Declaration decl ->
             let range = decl.Range
             let new_component_slot_expr: ComponentSlotExpr = 
@@ -1572,6 +1579,7 @@ let compileModule
                     |> Map.ofList
                 | _ -> Map.empty
             currCircuits, Map.fold(fun acc k v -> Map.add k v acc) currentParamSlot new_component_slot_expr
+
         | _ -> currCircuits, currentParamSlot
     let res, final_param_slot: Map<string,Circuit>*ComponentSlotExpr = compileModule node varToCompMap initialCircuits initialParamSlot// pass in everything set to 0 or flip flop output
     res, final_param_slot

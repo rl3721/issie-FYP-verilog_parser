@@ -75,13 +75,20 @@ type AlwaysConstructT = {Type: string; AlwaysType: string; Statement: StatementT
 
 type NamedPortConnectionT = {Type: string; PortId: IdentifierT; Primary: PrimaryT}
 
-type ModuleInstantiationT = {Type: string; Module: IdentifierT; Identifier: IdentifierT; Connections: NamedPortConnectionT array}
+
+type NamedParamAssignmentT = {Type: string; ParameterId: IdentifierT; MinTypExpr: ConstantExpressionT}
+type ModuleInstantiationT = {Type: string; Module: IdentifierT; Identifier: IdentifierT; 
+            Connections: NamedPortConnectionT array; ParamOverrides: NamedParamAssignmentT list option;}
+
+
+// type ModuleInstantiationT = {Type: string; Module: IdentifierT; Identifier: IdentifierT; Connections: NamedPortConnectionT array}
 
 type ParameterAssignmentT = {Type: string; ParameterIdentifier: IdentifierT; ParameterRHS: ConstantExpressionT}
 type ParameterDeclarationT = {Type:string; ParameterAssignmentList: ParameterAssignmentT list}
 
+type IfGenerateConstructT = {Type: string; Condition: ConstantExpressionT; IfBlock: ItemT list; ElseBlock: ItemT list; Location: int}
 /// The AST type for various types of module items, different fields are filled accordingly
-type ItemT =    {Type: string; 
+and ItemT =    {Type: string; 
                 ItemType: string; 
                 IODecl: IOItemT option; 
                 Decl: DeclarationT option; 
@@ -89,6 +96,9 @@ type ItemT =    {Type: string;
                 Statement: ContinuousAssignT option; 
                 AlwaysConstruct: AlwaysConstructT option; 
                 ModuleInstantiation: ModuleInstantiationT option; 
+                GenerateRegion: ItemT list option;
+                GenVarId: IdentifierT option;
+                IfGenerateConstruct: IfGenerateConstructT option;
                 Location: int}
 
 type ModuleItemsT = {Type : string; ItemList : ItemT array}
