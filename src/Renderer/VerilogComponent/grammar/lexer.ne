@@ -31,6 +31,8 @@ const lexer = moo.compile({
     rbracket: ']',
     at: '@',
     op_assign: '=',
+    pluscolon: "+:",
+    minuscolon: "-:",
     colon: ':',
     question: '?',
     or: '|',

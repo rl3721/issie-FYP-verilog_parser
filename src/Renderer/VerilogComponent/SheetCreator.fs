@@ -118,6 +118,18 @@ let createComponent (compType:ComponentType) (name:string) : Component =
     createComponent' id compType name inputPorts outputPorts
 
 
+let createParamCircuit param_expr paramBindings = 
+    let width = 32
+    let num = 
+        match (evaluateParamExpression paramBindings param_expr) with
+        | Ok value -> value
+        | _ -> 0
+        |> bigint
+    let dialog_box_text = 
+        renderParamExpression param_expr 0
+    
+    let constComp = createComponent (Constant1 (width, num, dialog_box_text)) "P"
+    {Comps=[constComp];Conns=[];Out=constComp.OutputPorts[0];OutWidth=width}, constComp.Id
 
 let extractCircuit (input:(Circuit*string*Slice*LHSType)) = 
     match input with
@@ -562,13 +574,13 @@ let getExprWidths (varSizeMap: Map<string, int>)(expr': ExpressionT) paramBindin
                 let width, expr = 
                     match primary.BitsStart, primary.BitsEnd, unary.Expression, primary.Width with
                     | None, None, None, _ -> Map.find (Option.get unary.Primary).Primary.Name varSizeMap, None
-                    | Some s, Some e, _, _ -> 
+                    | Some (s: ConstantExpressionT), Some e, _, _ -> 
                         let s = ConstantExpressionToInt s paramBindings //TODO: make paramslots
                         let e = ConstantExpressionToInt e paramBindings
                         (int s)-(int e)+1, None //if they are not constants, return 1
                     | None, None, Some expr, Some w -> 
                         printfn "Primary %A has no bitsstart and bitsend, but expression %A" primary.Primary.Name expr
-                        let w_val = ConstantExpressionToInt w paramBindings //TODO: make paramslots
+                        let w_val = (ConstantExpressionToInt w paramBindings)
                         w_val, Some (getMinWidthsExpr expr)
                     | _ -> failwithf "Not possible: primary bitsstart and bitsend are wrong!"
                 {Type=unary.Type; Primary= unary.Primary; Number=None; Expression=expr; Width=width}
@@ -699,10 +711,24 @@ let mainExpressionCircuitBuilder (expr:ExpressionT) ioAndWireToCompMap varSizeMa
                 let primaryWidth = Map.find (Option.get unary.Primary).Primary.Name varSizeMap
                 let shiftLeft = createComponent (Shift (primaryWidth, expr.Width, LSL)) "sll" 
                 let topCircuit = {Comps=[shiftLeft]; Conns=[]; Out=shiftLeft.OutputPorts[0]; OutWidth=primaryWidth}
+
                 let const1 = createComponent (Constant1 (primaryWidth, (1I <<< w_val) - 1I, "")) "const1" //TODO: make paramslot
 
                 // TODO: create param slot
-                let const1Circuit = {Comps=[const1]; Conns=[]; Out=const1.OutputPorts[0]; OutWidth=primaryWidth}  
+                let const1Circuit = {Comps=[const1]; Conns=[]; Out=const1.OutputPorts[0]; OutWidth=primaryWidth}
+                let param_expr = (ConstantExpressionToParamExpression (ConstantExpression w))
+                let const1Circuit, compID = 
+                   
+                    createParamCircuit param_expr paramBindings
+
+                let new_slot_bind  = 
+                    let new_slot = {CompId=compID; CompSlot=Buswidth} //TODO: placeholder, change to appropriate type
+                    let new_constrained_expr = {Expression=param_expr; Constraints=[MinVal (PInt 1, "" )]}
+                    new_slot, new_constrained_expr
+
+                
+
+                
                 let shiftLeftIthCircuit = joinCircuits [const1Circuit; index] [shiftLeft.InputPorts[0]; shiftLeft.InputPorts[1]] topCircuit
                 let primaryCircuit = {Comps=[];Conns=[];Out=primaryComp.OutputPorts[0];OutWidth=primaryWidth}
                 let andComp = createComponent (NbitsAnd primaryWidth) "and"
@@ -711,7 +737,7 @@ let mainExpressionCircuitBuilder (expr:ExpressionT) ioAndWireToCompMap varSizeMa
                 let shiftRight = createComponent (Shift (primaryWidth, expr.Width, LSR)) "srl"
                 let sllCircuit = {Comps=[shiftRight]; Conns=[]; Out=shiftRight.OutputPorts[0]; OutWidth=primaryWidth}
                 let sllCircuit' = joinCircuits [andCircuit; index] [shiftRight.InputPorts[0]; shiftRight.InputPorts[1]] sllCircuit
-                printf "endddddddsdsdsd"
+                // printf "endddddddsdsdsd"
                 sliceCircuit sllCircuit' w_val 0 //TODO: make paramslot
 
                 
@@ -1552,17 +1578,6 @@ let compileModule
 
 
 
-let createParamCircuit name param_expr paramBindings = 
-    let width = 32
-    let num = 
-        match (evaluateParamExpression paramBindings param_expr) with
-        | Ok value -> value
-        | _ -> 0
-        |> bigint
-    
-    
-    let constComp = createComponent (Constant1 (width, num, name)) "P"
-    {Comps=[constComp];Conns=[];Out=constComp.OutputPorts[0];OutWidth=width}, constComp.Id
 
 
 
@@ -1670,7 +1685,7 @@ let createSheet input (project:Project)=
                         {Type="";NumberType="";Bits=(Some (string width));Base=(Some "'b");AllNumber=(Some "0");UnsignedNumber=None;Location=100} //location is Don't Care
                     Map.add var (createNumberCircuit number) circuit_map, slot_map
                 | Some param_expr ->
-                    let new_circuit, compID = createParamCircuit var param_expr paramBindings
+                    let new_circuit, compID = createParamCircuit param_expr paramBindings
                     let new_circuit_map = 
                         circuit_map
                         |> Map.add var new_circuit

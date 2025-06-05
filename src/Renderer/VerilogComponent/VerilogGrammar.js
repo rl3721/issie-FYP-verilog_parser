@@ -34,6 +34,8 @@ const lexer = moo.compile({
     rbracket: ']',
     at: '@',
     op_assign: '=',
+    pluscolon: "+:",
+    minuscolon: "-:",
     colon: ':',
     question: '?',
     or: '|',
@@ -136,15 +138,109 @@ var grammar = {
     {"name": "UNARY", "symbols": [(lexer.has("lparen") ? {type: "lparen"} : lparen), "_", "BITWISE_OR", "_", (lexer.has("rparen") ? {type: "rparen"} : rparen)], "postprocess": function(d) {return {Type: "parenthesis", Primary: null, Number: null, Expression: d[2], Location: d[2].Location};}},
     {"name": "UNARY", "symbols": ["CONCATENATIONS"], "postprocess": id},
     {"name": "PRIMARY", "symbols": ["IDENTIFIER"], "postprocess": function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], Location: d[0].Location};}},
-    {"name": "PRIMARY", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "_", "EXPRESSION", "_", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) 
+    {"name": "PRIMARY", "symbols": ["IDENTIFIER", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "RANGE_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess":  function(d) {
+            return {
+                Type: "primary",
+                PrimaryType: "identifier_bit2",
+                Primary: d[0],
+                Expression: d[2].lsb,
+                Width:d[2].width,
+                Location:d[1].offset
+            };
+        } },
+    {"name": "RANGE_EXPRESSION", "symbols": ["EXPRESSION", (lexer.has("pluscolon") ? {type: "pluscolon"} : pluscolon), "CONSTANT_EXPRESSION"], "postprocess": function(d) 
         {
-            let width = {Type: "constant_expression", Location: d[4].Location, 
-                ConstantExpression: {Type: "unary", Location: d[4].Location,  
-                    Unary:{Type: "number", Location: d[4].Location, 
-                        Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: "1", Location: d[4].Location}}}};
-            return {Type: "primary", PrimaryType: "identifier_bit2", BitsStart: null, BitsEnd: null, Primary: d[0], Expression: d[4], 
-            Width: width, 
-            Location: d[0].Location};} },
+            let lsb_expression = d[0];
+            let width_constant_expression = d[2];
+            return {lsb: lsb_expression, width: width_constant_expression}
+        } },
+    {"name": "RANGE_EXPRESSION", "symbols": ["EXPRESSION", (lexer.has("minuscolon") ? {type: "minuscolon"} : minuscolon), "CONSTANT_EXPRESSION"], "postprocess": function(d) 
+        {   
+        
+            let msb_expression = d[0];
+            let width_constant_expression = d[2];
+            let width_expression = width_constant_expression.ConstantExpression;
+            let lsb_expression = {
+                Type: "additive",
+                Operator: "+",
+                Head: {
+                    Type: "additive",
+                    Operator: "-",
+                    Head: msb_expression,
+                    Tail: width_expression,
+                    Location: d[1].offset
+                },
+                Tail: {
+                    Type: "unary",
+                    Location: d[1].offset,
+                    Unary: {
+                        Type: "number", 
+                        Primary: null, 
+                        Number: {
+                            Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: "1", Location: d[1].offset
+                        }, 
+                        Expression: null, 
+                        Location: d[0].Location
+                    }
+                },
+                Location: d[1].offset
+            };
+            return {lsb: lsb_expression, width: width_constant_expression}
+        } },
+    {"name": "RANGE_EXPRESSION", "symbols": ["CONSTANT_EXPRESSION", (lexer.has("colon") ? {type: "colon"} : colon), "CONSTANT_EXPRESSION"], "postprocess":  function (d) {
+        let lsb_expression = d[2].ConstantExpression;
+        let msb_expression = d[0].ConstantExpression;
+        let width_constant_expression = {
+            Type: "constant_expression",
+            Location: d[1].offset,
+            ConstantExpression: {
+                Type: "additive",
+                Operator: "+",
+                Head: {
+                    Type: "additive",
+                    Operator: "-",
+                    Head: msb_expression,
+                    Tail: lsb_expression,
+                    Location: d[1].offset
+                },
+                Tail: {
+                    Type: "unary",
+                    Location: d[1].offset,
+                    Unary: {
+                        Type: "number", 
+                        Primary: null, 
+                        Number: {
+                            Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: "1", Location: d[1].offset
+                        }, 
+                        Expression: null, 
+                        Location: d[1].offset
+                    }
+                },
+                Location: d[1].offset
+            }
+        };
+        return {lsb: lsb_expression, width: width_constant_expression};
+        }
+            },
+    {"name": "RANGE_EXPRESSION", "symbols": ["EXPRESSION"], "postprocess":  function(d) {
+            let lsb_expression = d[0];
+            let width_constant_expression = {
+                Type: "constant_expression",
+                Location: d[0].Location,
+                ConstantExpression:{
+                    Type: "unary",
+                    Location: d[0].Location,
+                    Unary: {
+                        Type: "number",
+                        Location: d[0].Location,
+                        Number: {
+                            Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: "1", Location: d[0].Location
+                        }
+                    }
+                }
+            };
+            return {lsb: lsb_expression, width: width_constant_expression};
+        } },
     {"name": "NET_LVALUE", "symbols": ["IDENTIFIER"], "postprocess": function(d) {return {Type: "l_value", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0]};}},
     {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "UNSIGNED_NUMBER", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {
         let start = {Type: "constant_expression", Location: d[2].offset, 

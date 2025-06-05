@@ -100,21 +100,123 @@ UNARY
 
 
 PRIMARY # TODO: refactor this part such it accepts constant expressions
-    -> IDENTIFIER {%function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], Location: d[0].Location};} %}
+    -> IDENTIFIER 
+        {%function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], Location: d[0].Location};} %}
+    | IDENTIFIER %lbracket RANGE_EXPRESSION %rbracket 
+        {% function(d) {
+            return {
+                Type: "primary",
+                PrimaryType: "identifier_bit2",
+                Primary: d[0],
+                Expression: d[2].lsb,
+                Width:d[2].width,
+                Location:d[1].offset
+            };
+        } %}
+        
     # | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %rbracket 
     #     {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit", BitsStart: d[4], BitsEnd: d[4], Primary: d[0], Location: d[0].Location};} %}
     # | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %colon _ UNSIGNED_NUMBER _ %rbracket 
     #     {%function(d) {return {Type: "primary", PrimaryType: "identifier_bits", BitsStart: d[4], BitsEnd: d[8], Primary: d[0], Location: d[0].Location};} %}
 
-    | IDENTIFIER _ %lbracket _ EXPRESSION _ %rbracket {%function(d) 
+
+RANGE_EXPRESSION
+    -> EXPRESSION %pluscolon CONSTANT_EXPRESSION {%function(d) 
         {
-            let width = {Type: "constant_expression", Location: d[4].Location, 
-                ConstantExpression: {Type: "unary", Location: d[4].Location,  
-                    Unary:{Type: "number", Location: d[4].Location, 
-                        Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: "1", Location: d[4].Location}}}};
-            return {Type: "primary", PrimaryType: "identifier_bit2", BitsStart: null, BitsEnd: null, Primary: d[0], Expression: d[4], 
-            Width: width, 
-            Location: d[0].Location};} %}
+            let lsb_expression = d[0];
+            let width_constant_expression = d[2];
+            return {lsb: lsb_expression, width: width_constant_expression}
+        } %}
+
+    | EXPRESSION %minuscolon CONSTANT_EXPRESSION {%function(d) 
+        {   
+
+            let msb_expression = d[0];
+            let width_constant_expression = d[2];
+            let width_expression = width_constant_expression.ConstantExpression;
+            let lsb_expression = {
+                Type: "additive",
+                Operator: "+",
+                Head: {
+                    Type: "additive",
+                    Operator: "-",
+                    Head: msb_expression,
+                    Tail: width_expression,
+                    Location: d[1].offset
+                },
+                Tail: {
+                    Type: "unary",
+                    Location: d[1].offset,
+                    Unary: {
+                        Type: "number", 
+                        Primary: null, 
+                        Number: {
+                            Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: "1", Location: d[1].offset
+                        }, 
+                        Expression: null, 
+                        Location: d[0].Location
+                    }
+                },
+                Location: d[1].offset
+            };
+            return {lsb: lsb_expression, width: width_constant_expression}
+        } %}
+    | CONSTANT_EXPRESSION %colon CONSTANT_EXPRESSION {% function (d) {
+        let lsb_expression = d[2].ConstantExpression;
+        let msb_expression = d[0].ConstantExpression;
+        let width_constant_expression = {
+            Type: "constant_expression",
+            Location: d[1].offset,
+            ConstantExpression: {
+                Type: "additive",
+                Operator: "+",
+                Head: {
+                    Type: "additive",
+                    Operator: "-",
+                    Head: msb_expression,
+                    Tail: lsb_expression,
+                    Location: d[1].offset
+                },
+                Tail: {
+                    Type: "unary",
+                    Location: d[1].offset,
+                    Unary: {
+                        Type: "number", 
+                        Primary: null, 
+                        Number: {
+                            Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: "1", Location: d[1].offset
+                        }, 
+                        Expression: null, 
+                        Location: d[1].offset
+                    }
+                },
+                Location: d[1].offset
+            }
+        };
+        return {lsb: lsb_expression, width: width_constant_expression};
+        }
+    %}
+    | EXPRESSION 
+    {% function(d) {
+        let lsb_expression = d[0];
+        let width_constant_expression = {
+            Type: "constant_expression",
+            Location: d[0].Location,
+            ConstantExpression:{
+                Type: "unary",
+                Location: d[0].Location,
+                Unary: {
+                    Type: "number",
+                    Location: d[0].Location,
+                    Number: {
+                        Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: "1", Location: d[0].Location
+                    }
+                }
+            }
+        };
+        return {lsb: lsb_expression, width: width_constant_expression};
+    } %}
+    
 
 #### 8.5 Expression left-side values ####
 
