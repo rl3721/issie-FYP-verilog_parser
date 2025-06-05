@@ -183,11 +183,11 @@ let sliceFromBits (lhs:AssignmentLHST) (ioAndWireToCompMap: Map<string,Component
         //let width = extractWidth comp.Type
         {MSB = (width-1); LSB=0}
 
-let sliceFromBitsPrimary (primary: PrimaryT) (ioAndWireToCompMap: Map<string,Component>) varSizeMap = 
+let sliceFromBitsPrimary (primary: PrimaryT) (ioAndWireToCompMap: Map<string,Component>) paramBindings varSizeMap = 
     match (Option.isSome primary.BitsStart) with
-    |true -> 
-        let bStart = (Option.get primary.BitsStart)
-        let bEnd = (Option.get primary.BitsEnd)
+    |true -> //TODO: make paramslots
+        let bStart= ConstantExpressionToInt (Option.get primary.BitsStart) paramBindings
+        let bEnd = ConstantExpressionToInt (Option.get primary.BitsEnd) paramBindings
         {MSB = (int bStart); LSB =(int bEnd) }
     |false ->
         let width = Map.find primary.Primary.Name varSizeMap // TO DO: make it TryFind
@@ -210,16 +210,22 @@ let attachToOutput' (ioAndWireToCompMap: Map<string,Component>) (ioToCompMap: Ma
 
 /// Attach the merged circuits to the correct output port 
 let attachToOutput (ioAndWireToCompMap: Map<string,Component>) (ioToCompMap: Map<string, Component>) (circuit:Circuit) (portName:string) : CanvasState =
+    // printf "portname: %A" portName
     let outputOrWire = Map.find portName ioAndWireToCompMap // always a wirelabel
+    // printf "out comp: %A" outputOrWire
     let conn = createConnection circuit.Out outputOrWire.InputPorts[0]
     
+    
 
-    let allComps, allConns = 
+    let (allComps: Component list), allConns = 
+        // printf "UUUU"
         match Map.tryFind portName ioToCompMap with
         | Some outputPort ->
             let conn' = createConnection outputOrWire.OutputPorts[0] outputPort.InputPorts[0]
             circuit.Comps@[outputOrWire;outputPort], circuit.Conns@[conn; conn']
-        | _ -> circuit.Comps@[outputOrWire], circuit.Conns@[conn] // double check this
+        | _ -> 
+            // printf "this route problematic"
+            circuit.Comps@[outputOrWire], circuit.Conns@[conn] // double check this
     (allComps,allConns)
 
 let concatenateCanvasStates (mainCS: CanvasState) (newCS:CanvasState) : CanvasState =
@@ -403,29 +409,89 @@ let buildExpressionComponent (rhs:ExpressionCompilable) width =
 
 
 /////// CIRCUIT CREATION ////////
+/// 
+
+// let createParameterCircuit (name) paramBindings= 
+//     printf "Creating parameter circuit for %A" name
+//     let constValue =
+//         match evaluateParamExpression paramBindings name with
+//         |Ok n -> bigint n
+//         |Error _ -> failwithf "Shouldn't happen!"
+    
+//     let constComp = createComponent (Constant1 (32, constValue,"C")) "C"
+
+//     {Comps=[constComp];Conns=[];Out=constComp.OutputPorts[0];OutWidth=32} //TODO: make a param slot here
 
 /// Finds the correct component based on the name of input/wire
 /// creates a circuit with that component (and if required a busSel component
 /// connected to it to return the correct slice) and returns that circuit
-let createPrimaryCircuit (primary:PrimaryT) (ioAndWireToCompMap:Map<string,Component>) varSizeMap =
-        let name = primary.Primary.Name
-        let inputComp = Map.find name ioAndWireToCompMap
-        match Option.isNone primary.BitsStart with
-        |true -> 
-            //let width = extractWidth inputComp.Type
-            let width = Map.find name varSizeMap
-            {Comps=[];Conns=[];Out=inputComp.OutputPorts[0];OutWidth=width}
-        |false ->
-            let bStart,bEnd = (int (Option.get primary.BitsStart)),(int (Option.get primary.BitsEnd))
-            
-            let lsb,outWidth = bEnd,(bStart-bEnd+1)
-            
-            let busSelComp = createComponent (BusSelection (outWidth,lsb)) ""
+/// //TODO: add param slot
+let createPrimaryCircuit (primary:PrimaryT) (ioAndWireToCompMap:Map<string,Component>) varSizeMap paramBindings =
+    printfn "Creating primary circuit for %A" primary
+    let name = primary.Primary.Name
+    let inputComp = Map.find name ioAndWireToCompMap
+    match Option.isSome primary.BitsStart with
+    |false -> 
+        //let width = extractWidth inputComp.Type
+        printfn "Creating primary circuit for %s with no bits" name
+        let width = Map.find name varSizeMap
+        {Comps=[];Conns=[];Out=inputComp.OutputPorts[0];OutWidth=width}//empty list for new param slot for no bus selection
+    |true ->
+        let bStart= int <| ConstantExpressionToInt (Option.get primary.BitsStart) paramBindings
+        let bEnd = int <|  ConstantExpressionToInt (Option.get primary.BitsStart) paramBindings
+        
+        let lsb,outWidth = bEnd,(bStart-bEnd+1)
+        
+        let busSelComp = createComponent (BusSelection (outWidth,lsb)) ""
 
-            let conn = createConnection inputComp.OutputPorts[0] busSelComp.InputPorts[0]     
-            {Comps=[busSelComp];Conns=[conn];Out=busSelComp.OutputPorts[0];OutWidth=outWidth}
+        let conn = createConnection inputComp.OutputPorts[0] busSelComp.InputPorts[0]
+
+        // let start_param = ConstantExpressionToParamExpression (ConstantExpression r.Start)
+        // let end_param: ParamExpression = ConstantExpressionToParamExpression (ConstantExpression r.End)
+        // printf "Start param: %A, End param: %A\n" start_param end_param
+        // let start_slot_expr = 
+        //     match start_param with
+        //     | PInt n -> []
+        //     | _ -> 
+        //         let start_constrained_expr = 
+        //             {
+        //                 Expression = start_param;
+        //                 Constraints=[MinVal (PInt 1, "" )]
+        //             }
+        //         decl.Variables
+        //         |> Array.choose (fun name ->
+        //             ioToCompMap 
+        //             |> Map.tryFind name.Name 
+        //             |> Option.map (fun comp -> (comp.Id, IO (name.Name.ToUpper()))) // use uppercase for IO names, as issie defaults to it
+        //             )
+        //         |> Array.map (fun (id, slot_name) -> ({CompId=id; CompSlot=slot_name}, start_constrained_expr))
+        //         |> Array.toList
+        //     let end_slot_expr =
+        //         match end_param with
+        //         | PInt n -> []
+        //         | _ -> 
+        //             let end_constrained_expr = 
+        //                 {
+        //                     Expression = end_param;
+        //                     Constraints=[MinVal (PInt 1, "" )]
+        //                 }
+        //             decl.Variables
+        //             |> Array.choose (fun name ->
+        //                 ioToCompMap 
+        //                 |> Map.tryFind name.Name 
+        //                 |> Option.map (fun comp -> (comp.Id, IO (name.Name.ToUpper())))
+        //                 )
+        //             |> Array.map (fun (id, slot_name) -> ({CompId=id; CompSlot=slot_name}, end_constrained_expr))
+        //             |> Array.toList
+        //     printf "Start slot expr: %A, End slot expr: %A\n" start_slot_expr end_slot_expr
+        //     start_slot_expr @ end_slot_expr
+        //     |> Map.ofList
+        // | _ -> Map.empty
+
+        {Comps=[busSelComp];Conns=[conn];Out=busSelComp.OutputPorts[0];OutWidth=outWidth}
 
 /// Creates the correct component based on the number and returns a circuit with that component
+/// 
 let createNumberCircuit (number:NumberT) =
     let width = (Option.get number.Bits) |> int
     let _base = Option.get number.Base
@@ -443,13 +509,15 @@ let createNumberCircuit (number:NumberT) =
     let constComp = createComponent (Constant1 (width, constValue,text)) "C"
     {Comps=[constComp];Conns=[];Out=constComp.OutputPorts[0];OutWidth=width}
 
+
+
 // handling size extension / 0 padding
 // new expression type that stores width at each node (later signedness) "self determined"
 // pass through this and update all context determined expression widths (passing in a parameter context)
 
 
 
-let getExprWidths (varSizeMap: Map<string, int>)(expr': ExpressionT) : (ExpressionCompilable)=
+let getExprWidths (varSizeMap: Map<string, int>)(expr': ExpressionT) paramBindings : (ExpressionCompilable)=
     let rec getMinWidthsExpr (expr:ExpressionT) =
         // first check for self determined 
         match expr.Type with
@@ -494,8 +562,14 @@ let getExprWidths (varSizeMap: Map<string, int>)(expr': ExpressionT) : (Expressi
                 let width, expr = 
                     match primary.BitsStart, primary.BitsEnd, unary.Expression, primary.Width with
                     | None, None, None, _ -> Map.find (Option.get unary.Primary).Primary.Name varSizeMap, None
-                    | Some s, Some e, _, _ -> (int s)-(int e)+1, None //if they are not constants, return 1
-                    | None, None, Some expr, Some w -> w, Some (getMinWidthsExpr expr)
+                    | Some s, Some e, _, _ -> 
+                        let s = ConstantExpressionToInt s paramBindings //TODO: make paramslots
+                        let e = ConstantExpressionToInt e paramBindings
+                        (int s)-(int e)+1, None //if they are not constants, return 1
+                    | None, None, Some expr, Some w -> 
+                        printfn "Primary %A has no bitsstart and bitsend, but expression %A" primary.Primary.Name expr
+                        let w_val = ConstantExpressionToInt w paramBindings //TODO: make paramslots
+                        w_val, Some (getMinWidthsExpr expr)
                     | _ -> failwithf "Not possible: primary bitsstart and bitsend are wrong!"
                 {Type=unary.Type; Primary= unary.Primary; Number=None; Expression=expr; Width=width}
             |"number" ->
@@ -541,7 +615,7 @@ let sliceCircuit (circuit:Circuit) width lsb =
 /// Contains 6 recursive functions which eventually build the whole RHS expression
 /// The starting point is the buildExpressionCircuit rec function
 /// target is 0 if there is no lhs
-let mainExpressionCircuitBuilder (expr:ExpressionT) ioAndWireToCompMap varSizeMap target=
+let mainExpressionCircuitBuilder (expr:ExpressionT) ioAndWireToCompMap varSizeMap paramBindings target=
     
     /// builds the appropriate circuit of an expression based on expr.Type
     let rec buildExpressionCircuit (expr:ExpressionCompilable) (targetWidth: int)= 
@@ -613,16 +687,21 @@ let mainExpressionCircuitBuilder (expr:ExpressionT) ioAndWireToCompMap varSizeMa
     and buildUnaryCircuit (unary:UnaryCompilable) (targetWidth:int)=
         match unary.Type with
         |"primary" ->
+            printf "building primary circuit %A" unary
             //handle variable bitselect:
             match unary.Expression, (Option.get unary.Primary).Width with
             | Some expr, Some w -> 
+                let w_val = ConstantExpressionToInt w paramBindings
+
                 let index = buildExpressionCircuit expr expr.Width
                 let (primaryComp: Component) = Map.find (Option.get unary.Primary).Primary.Name ioAndWireToCompMap
                 //let primaryWidth = extractWidth primaryComp.Type
                 let primaryWidth = Map.find (Option.get unary.Primary).Primary.Name varSizeMap
                 let shiftLeft = createComponent (Shift (primaryWidth, expr.Width, LSL)) "sll" 
                 let topCircuit = {Comps=[shiftLeft]; Conns=[]; Out=shiftLeft.OutputPorts[0]; OutWidth=primaryWidth}
-                let const1 = createComponent (Constant1 (primaryWidth, (1I <<< w) - 1I, "")) "const1"
+                let const1 = createComponent (Constant1 (primaryWidth, (1I <<< w_val) - 1I, "")) "const1" //TODO: make paramslot
+
+                // TODO: create param slot
                 let const1Circuit = {Comps=[const1]; Conns=[]; Out=const1.OutputPorts[0]; OutWidth=primaryWidth}  
                 let shiftLeftIthCircuit = joinCircuits [const1Circuit; index] [shiftLeft.InputPorts[0]; shiftLeft.InputPorts[1]] topCircuit
                 let primaryCircuit = {Comps=[];Conns=[];Out=primaryComp.OutputPorts[0];OutWidth=primaryWidth}
@@ -632,10 +711,16 @@ let mainExpressionCircuitBuilder (expr:ExpressionT) ioAndWireToCompMap varSizeMa
                 let shiftRight = createComponent (Shift (primaryWidth, expr.Width, LSR)) "srl"
                 let sllCircuit = {Comps=[shiftRight]; Conns=[]; Out=shiftRight.OutputPorts[0]; OutWidth=primaryWidth}
                 let sllCircuit' = joinCircuits [andCircuit; index] [shiftRight.InputPorts[0]; shiftRight.InputPorts[1]] sllCircuit
-                sliceCircuit sllCircuit' w 0
+                printf "endddddddsdsdsd"
+                sliceCircuit sllCircuit' w_val 0 //TODO: make paramslot
+
+                
+                //TODO: create param slot
                 // get primary component
-            | _ -> createPrimaryCircuit (Option.get unary.Primary) ioAndWireToCompMap varSizeMap
+            | _ -> 
+                createPrimaryCircuit (Option.get unary.Primary) ioAndWireToCompMap varSizeMap paramBindings
         |"number" ->
+            printf "Number circuit %A" unary
             createNumberCircuit (Option.get unary.Number)
         |"parenthesis" ->
             buildExpressionCircuit (Option.get unary.Expression) targetWidth |> extendCircuit targetWidth
@@ -679,6 +764,7 @@ let mainExpressionCircuitBuilder (expr:ExpressionT) ioAndWireToCompMap varSizeMa
         joinCircuits [c1;c2] [topComp.InputPorts[0];topComp.InputPorts[1]] topCircuit
     
     and buildShiftCircuit (expr:ExpressionCompilable) targetWidth = 
+        printf "shift circuit"
         let operator = (Option.get expr.Operator)
         let tail = Option.get expr.Tail
         let unary = Option.get tail.Unary
@@ -815,7 +901,7 @@ let mainExpressionCircuitBuilder (expr:ExpressionT) ioAndWireToCompMap varSizeMa
             joinCircuits [compareCircuit] [notGateComp.InputPorts[0]] notGateCircuit
         | _ -> compareCircuit
         
-    let exprWidths = getExprWidths varSizeMap expr //pass in varsizemap
+    let exprWidths = getExprWidths varSizeMap expr paramBindings//pass in varsizemap
     buildExpressionCircuit exprWidths (max target exprWidths.Width) // get lhssize
 
 
@@ -1003,7 +1089,7 @@ let compileModule' node varToCompMap ioToCompMap paramBindings varSizeMap=
         | Assignment assign -> 
             let outPort = assign.LHS.Primary.Name
             let bits = sliceFromBits assign.LHS varToCompMap paramBindings varSizeMap
-            let circuit = mainExpressionCircuitBuilder assign.RHS varToCompMap varSizeMap (bits.MSB-bits.LSB+1)
+            let circuit = mainExpressionCircuitBuilder assign.RHS varToCompMap varSizeMap paramBindings (bits.MSB-bits.LSB+1)
             let lhstype = 
                 match Map.tryFind outPort ioToCompMap with
                 | None -> Wire
@@ -1036,7 +1122,7 @@ let compileModule' node varToCompMap ioToCompMap paramBindings varSizeMap=
                 match cond.ElseStatement with
                 | Some stmt -> compileModule (Statement stmt) varToCompMap Map.empty
                 | _ -> Map.empty
-            let condCircuit = mainExpressionCircuitBuilder cond.IfStatement.Condition varToCompMap varSizeMap 0
+            let condCircuit = mainExpressionCircuitBuilder cond.IfStatement.Condition varToCompMap varSizeMap paramBindings 0
             let res =
                 (currCircuits, Set.union (ifCircuits.Keys |> Set.ofSeq) (elseCircuits.Keys |> Set.ofSeq))
                 ||> Set.fold (fun circuits var ->
@@ -1185,9 +1271,10 @@ let compileModule
         | Assignment assign -> 
             match assign.LHS.VariableBitSelect, assign.LHS.Width with
             | None, _ ->
+                printf "build new assignment circuit" 
                 let outPort = assign.LHS.Primary.Name
                 let bits = sliceFromBits assign.LHS varToCompMap paramBindings varSizeMap // need different logic for variable indexed bit select
-                let circuit = mainExpressionCircuitBuilder assign.RHS varToCompMap varSizeMap (bits.MSB-bits.LSB+1)
+                let circuit = mainExpressionCircuitBuilder assign.RHS varToCompMap varSizeMap paramBindings (bits.MSB-bits.LSB+1)
                 let currCircuit = 
                     match Map.tryFind outPort currCircuits with
                     | Some c -> c
@@ -1205,12 +1292,12 @@ let compileModule
             | Some expr, Some w ->
                 let outPort = assign.LHS.Primary.Name
                 let outWidth = Map.find outPort varSizeMap
-                let rhsCircuit = mainExpressionCircuitBuilder assign.RHS varToCompMap varSizeMap outWidth
+                let rhsCircuit = mainExpressionCircuitBuilder assign.RHS varToCompMap varSizeMap paramBindings outWidth
                 let currCircuit = 
                     match Map.tryFind outPort currCircuits with
                     | Some c -> c
                     | _ -> failwithf "This should not happen, variable doesn't have a circuit"
-                let indexCircuit = mainExpressionCircuitBuilder expr varToCompMap varSizeMap 0
+                let indexCircuit = mainExpressionCircuitBuilder expr varToCompMap varSizeMap paramBindings 0
                 let const1 = createComponent (Constant1 (outWidth,  (1I <<< w) - 1I, "0b1")) "const"
                 let const1Circuit = {Comps=[const1]; Conns=[]; Out=const1.OutputPorts[0]; OutWidth=outWidth}
                 let shiftLeft = createComponent (Shift (outWidth, indexCircuit.OutWidth, LSL)) "shift"
@@ -1251,7 +1338,7 @@ let compileModule
                 | Some stmt -> compileModule (Statement stmt) varToCompMap currCircuits currentParamSlot
                 | _ -> currCircuits, currentParamSlot
                 |> fst
-            let condCircuit = mainExpressionCircuitBuilder cond.IfStatement.Condition varToCompMap varSizeMap 0// need to reduce it to 1 bit
+            let condCircuit = mainExpressionCircuitBuilder cond.IfStatement.Condition varToCompMap varSizeMap paramBindings 0// need to reduce it to 1 bit
             let comp = createComponent (BusCompare (condCircuit.OutWidth, 0I)) "CMP"
             let topCircuit = {Comps=[comp];Conns=[];Out=comp.OutputPorts[0];OutWidth=1}
             let condCircuitN = joinCircuits [condCircuit] [comp.InputPorts[0]] topCircuit
@@ -1302,7 +1389,7 @@ let compileModule
                 | Some stmt -> compileModule (Statement stmt) varToCompMap currCircuits currentParamSlot
                 | None -> currCircuits, currentParamSlot
                 |> fst
-            let sel = mainExpressionCircuitBuilder case.Expression varToCompMap varSizeMap 0
+            let sel = mainExpressionCircuitBuilder case.Expression varToCompMap varSizeMap paramBindings 0
             (currCircuits, muxInputs)
             ||> Map.fold (fun circuits var inputs ->
                 let defaultCircuit =
@@ -1340,14 +1427,14 @@ let compileModule
             let inputPrimaries, outputPrimaries = List.splitAt loadedComp.InputLabels.Length connections
             let inputCircuits = 
                 inputPrimaries
-                |> List.map (fun primary -> createPrimaryCircuit primary varToCompMap varSizeMap)
+                |> List.map (fun primary -> createPrimaryCircuit primary varToCompMap varSizeMap paramBindings)
 
             let topCircuit = {Conns=[]; Comps= [comp]; Out=comp.OutputPorts[0]; OutWidth=0}
             let inputCircuit = joinCircuits inputCircuits comp.InputPorts topCircuit
             (currCircuits, List.zip outputPrimaries comp.OutputPorts) 
             ||> List.fold (fun circuits (primary, port) ->
                 let outPort = primary.Primary.Name
-                let bits = sliceFromBitsPrimary primary varToCompMap varSizeMap// need different logic for variable indexed bit select
+                let bits = sliceFromBitsPrimary primary varToCompMap paramBindings varSizeMap// need different logic for variable indexed bit select
                 let circuit = {inputCircuit with Out=port; OutWidth=(bits.MSB-bits.LSB+1)}
                 let currCircuit = 
                     match Map.tryFind outPort circuits with
@@ -1465,6 +1552,18 @@ let compileModule
 
 
 
+let createParamCircuit name param_expr paramBindings = 
+    let width = 32
+    let num = 
+        match (evaluateParamExpression paramBindings param_expr) with
+        | Ok value -> value
+        | _ -> 0
+        |> bigint
+    
+    
+    let constComp = createComponent (Constant1 (width, num, name)) "P"
+    {Comps=[constComp];Conns=[];Out=constComp.OutputPorts[0];OutWidth=width}, constComp.Id
+
 
 
 
@@ -1514,8 +1613,17 @@ let createSheet input (project:Project)=
             )
         )
     let varSizeMap = Map.fold (fun acc key value -> Map.add key value acc) wireSizeMap portSizeMap
+    // printf "Variable size map: %A\n" varSizeMap
+
     let combVars = getCombinationalVars input project
     let clockedVars = getClockedVars input
+    let parameter_list: string list = 
+        paramBindings
+        |> Map.toList
+        |> List.map(fun(ParamName a,_) -> a)
+
+
+
     let varToCompMap = // need to only do this for outputs and wires driven by combinational logic, need to differentiate between the two so they have unique names
         (ioToCompMap, combVars)
         ||> List.fold ( fun map var ->
@@ -1532,27 +1640,60 @@ let createSheet input (project:Project)=
             let regComp = createComponent (Register size) var
             Map.add var regComp map
         ) 
+
+    let varToCompMap = 
+        (varToCompMap, parameter_list)
+        ||> List.fold(fun map var ->
+            let constValue =
+                match evaluateParamExpression paramBindings (PParameter (ParamName var)) with
+                |Ok n -> bigint n
+                |Error _ -> failwithf "Shouldn't happen!"
+            let constComp = createComponent IOLabel var 
+            Map.add var constComp map
+            )
+
+
+    // let initialParamSlots = Map.empty
+
+
     // initial circuits - don't need it for inputs
     let clockedVarsSet = clockedVars |> Set.ofList
-    let initialCircuits = 
-        (Map.empty, varSizeMap)
-        ||> Map.fold (fun map var width->
+    let initialCircuits, initialParamSlots = 
+        ((Map.empty, Map.empty), varSizeMap)
+        ||> Map.fold (fun (circuit_map,slot_map) var width->
             match Set.contains var inputs, Set.contains  var clockedVarsSet with
-            | true, _ -> map
+            | true, _ -> circuit_map, slot_map
             | false, false ->
-                let zero = {Type="";NumberType="";Bits=(Some (string width));Base=(Some "'b");AllNumber=(Some "0");UnsignedNumber=None;Location=100} //location is Don't Care
-                Map.add var (createNumberCircuit zero) map
+                match Map.tryFind (ParamName var) paramBindings with
+                | None -> 
+                    let number = 
+                        {Type="";NumberType="";Bits=(Some (string width));Base=(Some "'b");AllNumber=(Some "0");UnsignedNumber=None;Location=100} //location is Don't Care
+                    Map.add var (createNumberCircuit number) circuit_map, slot_map
+                | Some param_expr ->
+                    let new_circuit, compID = createParamCircuit var param_expr paramBindings
+                    let new_circuit_map = 
+                        circuit_map
+                        |> Map.add var new_circuit
+                    let new_slotmap  = 
+                        let new_slot = {CompId=compID; CompSlot=Buswidth} //TODO: placeholder, change to appropriate type
+                        let new_constrained_expr = {Expression=param_expr; Constraints=[MinVal (PInt 1, "" )]}
+                        slot_map
+                        |> Map.add new_slot new_constrained_expr
+                    new_circuit_map, slot_map //TODO: change this to new slotmap when implemented, currently this would crash the system
+               
             | false,true -> 
                 let reg = 
                     match Map.tryFind var varToCompMap with
                     | Some comp -> comp
                     | _ -> failwithf "Clocked variable doesn't have a component"
                 let circuit = {Comps=[reg]; Conns=[]; Out=reg.OutputPorts[0]; OutWidth=width}
-                Map.add var circuit map
+                Map.add var circuit circuit_map, slot_map
         )
-        |> Map.filter (fun var _ -> var <> "clk")
+        |> fun(circuit_map, slot_map) -> (
+            circuit_map
+            |> Map.filter (fun var _ -> var <> "clk"), slot_map)
 
-    let initialParamSlots = Map.empty
+
 
     let ioVars = 
         ioDecls
@@ -1561,6 +1702,7 @@ let createSheet input (project:Project)=
 
     let compileModuleResult = compileModule (VerilogInput input) varToCompMap ioToCompMap varSizeMap paramBindings initialCircuits initialParamSlots project
 
+    printf "compile complete" 
     let perItemCircuits = 
         compileModuleResult
         |> fst
@@ -1576,12 +1718,14 @@ let createSheet input (project:Project)=
     // list of canvas states, one per output
     // here all slices are merged together with mergeWires to create one CanvasState per output
     // ex. assign out[5:4],assign out[3:1], assign out[0] -> CanvasState for output port: {out}
+    // printf "perItemCircuits %A" perItemCircuits
     let csList = 
         perItemCircuits
         |> List.map (fun (portName,circuit) ->
             
             attachToOutput varToCompMap ioToCompMap circuit portName
         )
+    // printf "BBBB"
     let v =
         List.map (fun cs -> 
             cs

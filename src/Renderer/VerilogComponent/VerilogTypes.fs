@@ -34,13 +34,15 @@ type ModuleNameT = {Type : string; Name : IdentifierT}
 
 type NumberT = {Type: string; NumberType: string; Bits: string option; Base: string option; UnsignedNumber: string option; AllNumber: string option; Location: int }
 
-type PrimaryT = {Type: string; PrimaryType: string; BitsStart: string option; BitsEnd: string option; Primary: IdentifierT; Width: int option; Location: int}
+type ConstantExpressionT = {Type: string; ConstantExpression: ExpressionT; Location: int}
+
+and PrimaryT = {Type: string; PrimaryType: string; BitsStart: ConstantExpressionT option; BitsEnd: ConstantExpressionT option; Primary: IdentifierT; Width: ConstantExpressionT option; Location: int}
 
 
-type ExpressionT = {Type: string; Operator: string option; Head: ExpressionT option; Tail: ExpressionT option; Unary: UnaryT option; Location: int}
+and ExpressionT = {Type: string; Operator: string option; Head: ExpressionT option; Tail: ExpressionT option; Unary: UnaryT option; Location: int}
     and UnaryT = {Type: string; Primary: PrimaryT option; Number: NumberT option; Expression: ExpressionT option; Location: int}
 
-type ConstantExpressionT = {Type: string; ConstantExpression: ExpressionT; Location: int}
+
 
 type RangeT = {Type: string; Start: ConstantExpressionT; End: ConstantExpressionT; Location: int}
 

@@ -143,7 +143,7 @@ let checkCasesStatements
     // check for repeated cases
     // need to maybe check for missing cases
     let checkCaseStatement (caseStmt, location) =
-        let condWidth = getWidthOfExpr caseStmt.Expression portSizeMap
+        let condWidth = getWidthOfExpr caseStmt.Expression portSizeMap paramBindings
         if condWidth = 0 then []
         else
         let caseNumbers = caseStmt.CaseItems |> Array.collect (fun caseItem -> caseItem.Expressions)
@@ -195,13 +195,14 @@ let checkCasesStatements
 let allCasesCovered 
     caseStmt
     (portSizeMap: Map<string,int>) 
-    (wireSizeMap: Map<string,int>)  =
+    (wireSizeMap: Map<string,int>)
+    paramBindings  =
 
     match caseStmt.Default with
     | Some _ -> true
     | _ ->
         let portSizeMap = Map.fold (fun acc key value -> Map.add key value acc) portSizeMap wireSizeMap
-        let condWidth = getWidthOfExpr caseStmt.Expression portSizeMap
+        let condWidth = getWidthOfExpr caseStmt.Expression portSizeMap paramBindings
         if condWidth = 0 then true
         else
         let expNrOfCases = (1I <<< condWidth)
@@ -277,7 +278,7 @@ let checkVariablesAlwaysAssigned
             (Set.empty, completeVariables)
             ||> Array.fold Set.union
         | Case case ->
-                if allCasesCovered case portSizeMap wireSizeMap then
+                if allCasesCovered case portSizeMap wireSizeMap paramBindings then
                     let complCaseVars =
                         case.CaseItems
                         |> Array.map (fun caseItem -> getVariablesAlwaysAssigned (Statement caseItem.Statement))
@@ -350,7 +351,7 @@ let checkExpressions
         )
     let expressions = foldAST getAllExpressions' [] (VerilogInput ast)
     let caseItemNums = foldAST getCaseItemNums [] (VerilogInput ast)
-    let localErrors = List.collect (checkExpr linesLocations wireSizeMap []) expressions
+    let localErrors = List.collect (checkExpr linesLocations paramBindings wireSizeMap []) expressions
     let caseItemErrors = List.collect (checkNumber linesLocations) caseItemNums
     errorList @ localErrors @ caseItemErrors
 
@@ -505,8 +506,8 @@ let private getDependencies ast paramBindings variableSizeMap  =
             let lhsBits = getLHSBits' variableSizeMap paramBindings assign 
             let rhsBits = 
                 match assign.LHS.VariableBitSelect with
-                | Some expr -> Set.union (getRHSBits variableSizeMap assign.RHS)  (getRHSBits variableSizeMap expr)
-                | _ -> getRHSBits variableSizeMap assign.RHS
+                | Some expr -> Set.union (getRHSBits variableSizeMap paramBindings assign.RHS)  (getRHSBits variableSizeMap paramBindings expr)
+                | _ -> getRHSBits variableSizeMap paramBindings assign.RHS
             (graph, lhsBits)
             ||> List.fold (fun graph' lhs -> 
                 graph' |> Map.add lhs (Set.union rhsBits cond)
@@ -528,7 +529,7 @@ let private getDependencies ast paramBindings variableSizeMap  =
                 getDependencyFold acc (Statement statement) cond )
         | Case case ->
             // need to add case.Expression to dependencies
-            let condDependencies = getRHSBits variableSizeMap case.Expression
+            let condDependencies = getRHSBits variableSizeMap paramBindings case.Expression
             let caseItemDeps = Array.map (fun item -> getDependencyFold graph (CaseItem item) (Set.union condDependencies cond)) case.CaseItems |> List.ofArray
             let defaultDeps = 
                 match case.Default with
@@ -546,7 +547,7 @@ let private getDependencies ast paramBindings variableSizeMap  =
         | CaseItem item -> 
             getDependencyFold graph (Statement item.Statement) cond
         | Conditional conditional ->
-            let condDep = getRHSBits variableSizeMap conditional.IfStatement.Condition
+            let condDep = getRHSBits variableSizeMap paramBindings conditional.IfStatement.Condition
             let ifDep = getDependencyFold  graph (Statement conditional.IfStatement.Statement) (Set.union cond condDep)
             let elseDep = 
                 match conditional.ElseStatement with
@@ -599,7 +600,7 @@ let checkVariablesUsed
     let moduleInstantiationPorts = 
         foldAST getModuleInstantiationStatements [] (VerilogInput ast)
         |> List.collect (fun modInst -> modInst.Connections |> Array.toList)
-        |> List.collect (fun conn -> getPrimaryBits wireAndPortSizeMap conn.Primary)
+        |> List.collect (fun conn -> getPrimaryBits wireAndPortSizeMap conn.Primary paramBindings)
         |> Set.ofList
     let assignmentsLHS = 
         foldAST getAssignments' [] (VerilogInput ast)
@@ -650,7 +651,7 @@ let rec getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocat
     match node with
     | Assignment assign -> 
         let lhsBits = getLHSBits' wireAndPortSizeMap paramBindings assign |> Set.ofList
-        let rhsBits = getRHSBits wireAndPortSizeMap assign.RHS
+        let rhsBits = getRHSBits wireAndPortSizeMap paramBindings assign.RHS
         let assignedAfterRHS =  Set.intersect lhsBits rhsVars
         let rhsVars' = Set.union rhsVars rhsBits
         if Set.count assignedAfterRHS = 0 then 
@@ -679,7 +680,7 @@ let rec getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocat
         (Set.union ifVars elseVars), errors @ ifErrors @ elseErrors
     | IfStatement ifstmt ->
         let rhsVars' = 
-            getRHSBits wireAndPortSizeMap ifstmt.Condition
+            getRHSBits wireAndPortSizeMap paramBindings ifstmt.Condition
             |> Set.union rhsVars
         getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars', errors) (Statement ifstmt.Statement)
     | Case case ->
@@ -740,9 +741,12 @@ let checkAlwaysCombRHS
         |> List.collect checkAlwaysComb
     errorList @ localErrors
 
-let getPrimaryWidth portSizeMap (primary: PrimaryT) =
+let getPrimaryWidth portSizeMap paramBindings (primary: PrimaryT) =
     match primary.BitsStart, primary.BitsEnd with
-    | Some s, Some e -> (int s)-(int e)+1;
+    | Some s, Some e -> 
+        let start_value = ConstantExpressionToInt s paramBindings
+        let end_value = ConstantExpressionToInt e paramBindings
+        (int start_value)-(int end_value)+1;
     | _ ->
         match Map.tryFind primary.Primary.Name portSizeMap with
         | Some w -> w
@@ -762,6 +766,7 @@ let checkModuleInstantiations
     (wireSizeMap: Map<string, int>)
     (project: Project) 
     (portMap: Map<string, string>)
+    (paramBindings: ParameterTypes.ParamBindings)
     (errorList: ErrorInfo list) =
 
     let wireAndPortSizeMap = Map.fold (fun acc key value -> Map.add key value acc) wireSizeMap portSizeMap
@@ -883,7 +888,7 @@ let checkModuleInstantiations
                 |> List.collect (fun (conn: NamedPortConnectionT) ->
                     match List.tryFind (fun port' -> fst port' = conn.PortId.Name.ToUpper()) (comp.InputLabels@comp.OutputLabels) with
                     | Some port -> 
-                        let w = getPrimaryWidth wireAndPortSizeMap conn.Primary
+                        let w = getPrimaryWidth wireAndPortSizeMap paramBindings conn.Primary
                         if (snd port) <> w then
                             let extraMessages=                    
                                 [|

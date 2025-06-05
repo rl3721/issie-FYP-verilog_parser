@@ -282,7 +282,10 @@ let checkAllOutputsAssigned
             |> List.map (fun connection ->
                 match connection.Primary with
                 | a when isNullOrUndefined a.BitsStart -> (a.Primary.Name,-1,-1)
-                | a -> (a.Primary.Name,(int (Option.get a.BitsStart)),(int (Option.get a.BitsEnd)))
+                | a -> 
+                    let bitsStart = ConstantExpressionToInt (Option.get a.BitsStart) paramBindings
+                    let bitsEnd = ConstantExpressionToInt (Option.get a.BitsEnd) paramBindings
+                    (a.Primary.Name,(int (bitsStart)),(int (bitsEnd)))
                 )
             |> List.append vars
         | _ -> vars
@@ -442,13 +445,24 @@ let checkWiresAndAssignments
         declarations
         |> List.collect (fun decl -> List.ofArray decl.Variables)
         |> List.map (fun id -> id.Name)
-    let wireNameList' = wireNameList @ logicNameList
+
+    let wireNameList' = 
+        let paramNameList = 
+            string_param_map
+            |> Map.toList
+            |> List.map fst
+        wireNameList @ logicNameList @ paramNameList
     
-    let portAndWireNames =
-        portMap
-        |> Map.toList
-        |> List.map fst
-        |> List.append wireNameList'
+    let availableNames =
+        let portNameList = 
+            portMap
+            |> Map.toList
+            |> List.map fst
+        let paramNameList = 
+            string_param_map
+            |> Map.toList
+            |> List.map fst
+        portNameList @ paramNameList
 
     let outputNameList = portMap |> Map.keysL
     /// Helper function to extract all inputs + wires declared + outputs
@@ -648,7 +662,7 @@ let checkWiresAndAssignments
                         |]
                     createErrorMessage linesLocations currLocation message extraMessages name
                 |false ->
-                    let closeVariables = findCloseVariable name portAndWireNames 
+                    let closeVariables = findCloseVariable name availableNames 
                     match List.isEmpty closeVariables with
                     |true ->
                         let message = sprintf "Variable '%s' is not declared as input or variable" name
@@ -681,7 +695,7 @@ let checkWiresAndAssignments
     /// Check if the width of each wire/input used
     /// is within the correct range (defined range)
     let checkSizesOnRHSOfAssignment (assignment: AssignmentT) currentInputWireSizeMap localErrors =
-        checkExpr linesLocations currentInputWireSizeMap localErrors assignment.RHS
+        checkExpr linesLocations paramBindings currentInputWireSizeMap localErrors assignment.RHS
     
     /// Helper function to extract all inputs + wires declared 
     /// prior to the assignment being checked
@@ -719,7 +733,7 @@ let checkWiresAndAssignments
             let currentInputWireList = getCurrentInputWireList primary.Primary.Location
             let currentInputWireSizeMap = getCurrentInputWireSizeMap primary.Primary.Location
             checkNamesInPrimaries [primary] currentInputWireList []
-            |> List.append (checkPrimariesWidths linesLocations currentInputWireSizeMap [] [primary])
+            |> List.append (checkPrimariesWidths linesLocations currentInputWireSizeMap paramBindings [] [primary])
         )
         
     let localErrors =
@@ -739,7 +753,7 @@ let checkWiresAndAssignments
             |> checkSizesOnRHSOfAssignment assignment currentInputWireSizeMap
             |> (fun errlst -> 
                 match assignment.LHS.VariableBitSelect with
-                | Some expr -> checkExpr linesLocations currentInputWireSizeMap errlst expr
+                | Some expr -> checkExpr linesLocations paramBindings currentInputWireSizeMap errlst expr
                 | _ -> errlst)
             //|> checkWidthOfAssignment assignment currentInputWireSizeMap location 
         )
@@ -799,7 +813,7 @@ let checkAssignmentWidths
     let localErrors = 
         assignments
         |> List.collect (fun (assign, loc) ->
-            let rhsW = getWidthOfExpr assign.RHS wireAndPortSizeMap
+            let rhsW = getWidthOfExpr assign.RHS wireAndPortSizeMap paramBindings
             let lhsW = getLHSWidth assign wireAndPortSizeMap paramBindings
             if rhsW > lhsW then
                 let message = sprintf "The RHS expression (%A bits wide) doesn't fit in the variable on the LHS (%A bits wide)" rhsW lhsW
@@ -969,22 +983,35 @@ let getInputNames portMap =
 
 /// Returns the names of the declared WIRES
 let getWireSizeMap items paramBindings = 
-    items 
-    |> List.collect (fun x -> 
-        match (x.Statement |> isNullOrUndefined) with
-        | false -> 
-            match x.Statement with
-            | Some statement when statement.StatementType = "wire" ->
-                let lhs = statement.Assignment.LHS 
-                match isNullOrUndefined lhs.BitsStart with
-                |true  -> [lhs.Primary.Name,1]
-                |false -> 
-                    let start_value = ConstantExpressionToInt (Option.get lhs.BitsStart) paramBindings
-                    let end_value = ConstantExpressionToInt (Option.get lhs.BitsEnd) paramBindings
-                    let size = (start_value |> int) - (end_value |> int) + 1
-                    [lhs.Primary.Name,size]
-            | _ -> []
-        | true -> [])
+    let wireSizeMap =
+        items 
+        |> List.collect (fun x -> 
+            match (x.Statement |> isNullOrUndefined) with
+            | false -> 
+                match x.Statement with
+                | Some statement when statement.StatementType = "wire" ->
+                    let lhs = statement.Assignment.LHS 
+                    match isNullOrUndefined lhs.BitsStart with
+                    |true  -> [lhs.Primary.Name,1]
+                    |false -> 
+                        let start_value = ConstantExpressionToInt (Option.get lhs.BitsStart) paramBindings
+                        let end_value = ConstantExpressionToInt (Option.get lhs.BitsEnd) paramBindings
+                        let size = (start_value |> int) - (end_value |> int) + 1
+                        [lhs.Primary.Name,size]
+                | _ -> []
+            | true -> [])
+    let paramSizeMap = 
+        items 
+        |> List.collect (fun x -> 
+            match (x.ParamDecl |> isNullOrUndefined) with
+            | false -> 
+                match x.ParamDecl with
+                | Some decl -> 
+                    decl.ParameterAssignmentList 
+                    |> List.map (fun assign -> (assign.ParameterIdentifier.Name, 32))
+                | None -> []
+            | true -> [])
+    wireSizeMap @ paramSizeMap
     |> Map.ofList
 
 
@@ -1001,17 +1028,30 @@ let getWireNames items =
         | true -> [])
 
 let getWireLocationMap items = 
-    items 
-    |> List.collect (fun x -> 
-        match (x.Statement |> isNullOrUndefined) with
-        | false -> 
-            match x.Statement with
-            | Some statement when statement.StatementType = "wire" ->
-                let lhs = statement.Assignment.LHS 
-                let loc = x.Location
-                [lhs.Primary.Name,loc]
-            | _ -> []
-        | true -> [])
+    let statementLocationMap =
+        items 
+        |> List.collect (fun x -> 
+            match (x.Statement |> isNullOrUndefined) with
+            | false -> 
+                match x.Statement with
+                | Some statement when statement.StatementType = "wire" ->
+                    let lhs = statement.Assignment.LHS 
+                    let loc = x.Location
+                    [lhs.Primary.Name,loc]
+                | _ -> []
+            | true -> [])
+    let paramLocationMap =  
+        items 
+        |> List.collect (fun x -> 
+            match (x.ParamDecl |> isNullOrUndefined) with
+            | false -> 
+                match x.ParamDecl with
+                | Some decl -> 
+                    decl.ParameterAssignmentList 
+                    |> List.map (fun assign -> (assign.ParameterIdentifier.Name, assign.ParameterIdentifier.Location))
+                | None -> []
+            | true -> [])
+    statementLocationMap @ paramLocationMap
     |> Map.ofList
 
 let getParameterDeclarationError linesLocations parameterDecls = 
@@ -1103,6 +1143,7 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
         
         let wireNameList = getWireNames items
         let wireLocationMap = getWireLocationMap items //need to add declarations
+
         let wireLocationMap = 
             (wireLocationMap, declarations)
             ||> List.fold (fun (wireLocMap: Map<string, int>) (decl: DeclarationT) -> 
@@ -1151,7 +1192,7 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
                 |> checkVariablesUsed ast linesLocations portSizeMap wireSizeMap paramBindings
                 |> checkAlwaysCombRHS ast linesLocations portSizeMap wireSizeMap paramBindings
                 |> checkAssignmentWidths ast linesLocations portSizeMap wireSizeMap paramBindings
-                |> checkModuleInstantiations ast linesLocations portSizeMap wireSizeMap project portMap
+                |> checkModuleInstantiations ast linesLocations portSizeMap wireSizeMap project portMap paramBindings
                 |> checkInputsAssigned ast linesLocations portMap
                 |> List.distinct // filter out possible double Errors
             with UnsupportedConstantExpression msg ->

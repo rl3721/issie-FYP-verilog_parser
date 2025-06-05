@@ -101,9 +101,20 @@ UNARY
 
 PRIMARY # TODO: refactor this part such it accepts constant expressions
     -> IDENTIFIER {%function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], Location: d[0].Location};} %}
-    | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit", BitsStart: d[4], BitsEnd: d[4], Primary: d[0], Location: d[0].Location};} %}
-    | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %colon _ UNSIGNED_NUMBER _ %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bits", BitsStart: d[4], BitsEnd: d[8], Primary: d[0], Location: d[0].Location};} %}
-    | IDENTIFIER _ %lbracket _ EXPRESSION _ %rbracket {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit2", BitsStart: null, BitsEnd: null, Primary: d[0], Expression: d[4], Width:1, Location: d[0].Location};} %}
+    # | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %rbracket 
+    #     {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit", BitsStart: d[4], BitsEnd: d[4], Primary: d[0], Location: d[0].Location};} %}
+    # | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %colon _ UNSIGNED_NUMBER _ %rbracket 
+    #     {%function(d) {return {Type: "primary", PrimaryType: "identifier_bits", BitsStart: d[4], BitsEnd: d[8], Primary: d[0], Location: d[0].Location};} %}
+
+    | IDENTIFIER _ %lbracket _ EXPRESSION _ %rbracket {%function(d) 
+        {
+            let width = {Type: "constant_expression", Location: d[4].Location, 
+                ConstantExpression: {Type: "unary", Location: d[4].Location,  
+                    Unary:{Type: "number", Location: d[4].Location, 
+                        Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: "1", Location: d[4].Location}}}};
+            return {Type: "primary", PrimaryType: "identifier_bit2", BitsStart: null, BitsEnd: null, Primary: d[0], Expression: d[4], 
+            Width: width, 
+            Location: d[0].Location};} %}
 
 #### 8.5 Expression left-side values ####
 
@@ -134,7 +145,7 @@ NET_LVALUE
             return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: start, BitsEnd: end, Primary: d[0]};
         }       
         %}
-    | IDENTIFIER %Lbracket CONSTANT_EXPRESSION %rbracket 
+    | IDENTIFIER %lbracket CONSTANT_EXPRESSION %rbracket 
         {%function(d) {
             return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[2], BitsEnd: d[2], Primary: d[0], Expression: d[2], Width: 1};} 
         %}

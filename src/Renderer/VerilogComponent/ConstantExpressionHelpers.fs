@@ -102,6 +102,7 @@ let getParamBindings (items: ItemT list)=
 /// The simplified value will be either a constant or a linear combination of a constant and a parameter.
 /// NB here 'PINT is not a polymorphic type but a type parameter that will be instantiated to int or bigint.
 let evaluateParamExpression (paramBindings: ParamBindings) (paramExpr: ParamExpression) : Result<ParamInt, ParamError> =
+    printf "param expr %A" paramExpr
     // changed the function to be recursive
     let rec recursiveEvaluation (expr: ParamExpression) : ParamExpression =
         match expr with

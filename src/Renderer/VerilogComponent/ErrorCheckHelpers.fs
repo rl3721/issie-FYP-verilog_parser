@@ -55,24 +55,52 @@ let rec primariesUsedInAssignment inLst (tree: ExpressionT) =
     | "unary" when (Option.get tree.Unary).Type = "number" -> 
         match (Option.get (Option.get tree.Unary).Number).NumberType with
         | "all" -> 
-            let afterBitsSection = (string ((Option.get (Option.get (Option.get tree.Unary).Number).Base)[1])) + (Option.get (Option.get (Option.get tree.Unary).Number).AllNumber)
-            List.append inLst 
-                    [(
-                            {
-                            Type= "primary"; 
-                            PrimaryType= afterBitsSection; 
-                            BitsStart= Some "-3";
-                            BitsEnd= Some (Option.get (Option.get (Option.get tree.Unary).Number).Bits); 
-                            Primary= {
-                                Name="delete123";
-                                Location=(Option.get (Option.get tree.Unary).Number).Location
-                                }
-                            Width=None;
-                            Location = 1 //TODO: check if this is correct
-                            }
+            inLst
+            // let afterBitsSection = (string ((Option.get (Option.get (Option.get tree.Unary).Number).Base)[1])) + (Option.get (Option.get (Option.get tree.Unary).Number).AllNumber)
+            // List.append inLst 
+            //         [(
+            //                 {
+            //                 Type= "primary"; 
+            //                 PrimaryType= afterBitsSection; 
+            //                 BitsStart= Some {
+            //                     Type="constant_expression";
+            //                     Location = 0; //arbitrary, not used
+            //                     ConstantExpression={
+            //                         Type = "Unary";
+            //                         Location = 0; //arbitrary, not used
+            //                         Operator = None;
+            //                         Head = None;
+            //                         Tail = None;
+            //                         Unary = Some {
+            //                             Type = "number";
+            //                             Primary = None;
+            //                             Expression = None;
+            //                             Location = 0 //arbitrary, not used
+            //                             Number = Some {
+            //                                 Type = "number";
+            //                                 NumberType = "all";
+            //                                 Bits = Some "32"
+            //                                 Base = Some "'d";
+            //                                 UnsignedNumber = None;
+            //                                 AllNumber = Some afterBitsSection;
+            //                                 Location = 0 //arbitrary, not used
+            //                             };
+                                        
+            //                         }
+                                    
+            //                     }
+            //                 };
+                            // BitsEnd= Some (Option.get (Option.get (Option.get tree.Unary).Number).Bits); 
+                            // Primary= {
+                            //     Name="delete123";
+                            //     Location=(Option.get (Option.get tree.Unary).Number).Location
+                            //     }
+                            // Width=None;
+                            // Location = 1 //TODO: check if this is correct
+                            // }
                             
                             
-                        )]
+                        // )]
         | _ -> inLst
 
     | "bitwise_OR" | "bitwise_XOR" | "bitwise_AND" 
@@ -156,11 +184,14 @@ let getLHSBitsAssignedCertainly portSizeMap paramBindings (assignment: Assignmen
     | None, None, Some _ -> []
     | _ -> failwithf "Wrong combination of bitstart, bitsend and variable bitselect"
 
-let getPrimaryBits portSizeMap (primary: PrimaryT) =
+let getPrimaryBits portSizeMap (primary: PrimaryT) paramBindings =
     let primaryWithRange =
         match primary with
         | a when isNullOrUndefined primary.BitsStart -> (a.Primary.Name,-1,-1)
-        | a -> (a.Primary.Name,(int (Option.get a.BitsStart)),(int (Option.get a.BitsEnd)))
+        | a -> 
+            let start_val = int <| ConstantExpressionHelpers.ConstantExpressionToInt (Option.get a.BitsStart) paramBindings
+            let end_val = ConstantExpressionHelpers.ConstantExpressionToInt (Option.get a.BitsEnd) paramBindings
+            (a.Primary.Name,(start_val),end_val)
     
     let portListMap =
         match primaryWithRange with
@@ -219,6 +250,7 @@ let getCaseItemNums nums node =
 let RHSUnaryAnalysis
     (assignmentRHS:ExpressionT)
     (inputWireSizeMap: Map<string,int>)
+    (paramBindings: ParameterTypes.ParamBindings)
         : OneUnary =
 
     let rec findSizeOfExpression (tree:ExpressionT) : OneUnary = 
@@ -231,7 +263,9 @@ let RHSUnaryAnalysis
                         | Some num -> {Name=primary.Primary.Name;ResultWidth=num;Head=None;Tail=None;Elements=[]}
                         | None -> {Name="undefined";ResultWidth=(0);Head=None;Tail=None;Elements=[]} // if name doesn't exist skip it, error found by assignmentRHSNameCheck
                     | false -> 
-                        {Name=primary.Primary.Name;ResultWidth=((Option.get primary.BitsStart) |> int) - ((Option.get primary.BitsEnd) |> int) + 1;Head=None;Tail=None;Elements=[]}
+                        let start_val = ConstantExpressionHelpers.ConstantExpressionToInt (Option.get primary.BitsStart) paramBindings
+                        let end_val = ConstantExpressionHelpers.ConstantExpressionToInt (Option.get primary.BitsEnd) paramBindings
+                        {Name=primary.Primary.Name;ResultWidth=(start_val|> int) - (end_val |> int) + 1;Head=None;Tail=None;Elements=[]}
                         
         | "unary" when (Option.get tree.Unary).Type = "number" ->
                 {Name="[number]";ResultWidth=int <| (Option.get (Option.get (Option.get tree.Unary).Number).Bits) ;Head=None;Tail=None;Elements=[]}
@@ -297,6 +331,7 @@ let RHSUnaryAnalysis
 let getWidthOfExpr
     (assignmentRHS:ExpressionT)
     (inputWireSizeMap: Map<string,int>)
+    (paramBindings: ParameterTypes.ParamBindings)
         =
 
     let rec findSizeOfExpression (tree:ExpressionT) = 
@@ -309,7 +344,9 @@ let getWidthOfExpr
                         | Some num -> num
                         | None -> 0 // if name doesn't exist skip it, error found by assignmentRHSNameCheck
                     | false, _ -> 
-                        ((Option.get primary.BitsStart) |> int) - ((Option.get primary.BitsEnd) |> int) + 1
+                        let start_val = ConstantExpressionHelpers.ConstantExpressionToInt (Option.get primary.BitsStart) paramBindings
+                        let end_val = ConstantExpressionHelpers.ConstantExpressionToInt (Option.get primary.BitsEnd) paramBindings
+                        (start_val |> int) - ( end_val|> int) + 1
                     | true , Some expr -> 1
                         
         | "unary" when (Option.get tree.Unary).Type = "number" ->
@@ -380,14 +417,14 @@ let getWidthOfExpr
 
         /// Check if the width of each wire/input used
     /// is within the correct range (defined range)
-let checkPrimariesWidths linesLocations currentInputWireSizeMap localErrors (primariesRHS: PrimaryT list) =
+let checkPrimariesWidths linesLocations currentInputWireSizeMap paramBindings localErrors (primariesRHS: PrimaryT list) =
     primariesRHS
     |> List.collect (fun x -> 
         match isNullOrUndefined x.BitsStart with
         | false ->
             let name = x.Primary.Name
-            let bStart = int <| Option.get x.BitsStart 
-            let bEnd = int <| Option.get x.BitsEnd
+            let bStart = int <| ConstantExpressionHelpers.ConstantExpressionToInt (Option.get x.BitsStart) paramBindings
+            let bEnd = int <| ConstantExpressionHelpers.ConstantExpressionToInt (Option.get x.BitsEnd) paramBindings
             match bStart with   
             |(-3) ->   // hack to identify numbers
                 if bEnd = 0 then
@@ -456,9 +493,9 @@ let checkPrimariesWidths linesLocations currentInputWireSizeMap localErrors (pri
                 | None -> localErrors //invalid name, error found by AssignmentRHSNameCheck 
         | true -> localErrors
     )
-let checkExpr linesLocations currentInputWireSizeMap localErrors expr =
+let checkExpr linesLocations paramBindings currentInputWireSizeMap localErrors expr =
     let primariesRHS = primariesUsedInAssignment [] expr
-    checkPrimariesWidths linesLocations currentInputWireSizeMap localErrors primariesRHS
+    checkPrimariesWidths linesLocations currentInputWireSizeMap paramBindings localErrors primariesRHS
 
 let checkNumber linesLocations (num:NumberT) =
     let numBase, allNum, width = Option.get num.Base, Option.get num.AllNumber, Option.get num.Bits
@@ -493,7 +530,7 @@ let checkNumber linesLocations (num:NumberT) =
 
 
 /// make sure to include variables AND ports in portSizeMap
-let getRHSBits portSizeMap expression=
+let getRHSBits portSizeMap paramBindings expression=
     
     let rec getExprBits (expr:ExpressionT) =
         let leftBits =
@@ -514,11 +551,11 @@ let getRHSBits portSizeMap expression=
                     let var = primary.Primary.Name
                     let bitsStart =
                         match primary.BitsStart with
-                        |Some bitstart -> bitstart |> int
+                        |Some bitstart -> ConstantExpressionHelpers.ConstantExpressionToInt bitstart paramBindings  |> int
                         | _ -> ( Option.defaultValue 1 (Map.tryFind var portSizeMap))-1// get bit width from portmap
                     let bitsEnd =
                         match primary.BitsEnd with
-                        |Some bitsend -> bitsend |> int
+                        |Some bitsend -> ConstantExpressionHelpers.ConstantExpressionToInt bitsend paramBindings |> int
                         | _ ->  0
                     [bitsEnd .. bitsStart]
                     |> List.map (fun idx -> var+"["+(string idx)+"]")
@@ -528,11 +565,11 @@ let getRHSBits portSizeMap expression=
                     let var = primary.Primary.Name
                     let bitsStart =
                         match primary.BitsStart with
-                        |Some bitstart -> bitstart |> int
+                        |Some bitstart -> int <| ConstantExpressionHelpers.ConstantExpressionToInt bitstart paramBindings
                         | _ -> ( Option.defaultValue 1 (Map.tryFind var portSizeMap))-1/// get bit width from portmap
                     let bitsEnd =
                         match primary.BitsEnd with
-                        |Some bitsend -> bitsend |> int
+                        |Some bitsend -> int <| ConstantExpressionHelpers.ConstantExpressionToInt bitsend paramBindings
                         | _ ->  0
                     [bitsEnd .. bitsStart]
                     |> List.map (fun idx -> var+"["+(string idx)+"]")

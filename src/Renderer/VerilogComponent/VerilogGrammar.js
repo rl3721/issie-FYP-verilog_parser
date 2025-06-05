@@ -136,9 +136,15 @@ var grammar = {
     {"name": "UNARY", "symbols": [(lexer.has("lparen") ? {type: "lparen"} : lparen), "_", "BITWISE_OR", "_", (lexer.has("rparen") ? {type: "rparen"} : rparen)], "postprocess": function(d) {return {Type: "parenthesis", Primary: null, Number: null, Expression: d[2], Location: d[2].Location};}},
     {"name": "UNARY", "symbols": ["CONCATENATIONS"], "postprocess": id},
     {"name": "PRIMARY", "symbols": ["IDENTIFIER"], "postprocess": function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], Location: d[0].Location};}},
-    {"name": "PRIMARY", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "_", "UNSIGNED_NUMBER", "_", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return {Type: "primary", PrimaryType: "identifier_bit", BitsStart: d[4], BitsEnd: d[4], Primary: d[0], Location: d[0].Location};}},
-    {"name": "PRIMARY", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "_", "UNSIGNED_NUMBER", "_", (lexer.has("colon") ? {type: "colon"} : colon), "_", "UNSIGNED_NUMBER", "_", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return {Type: "primary", PrimaryType: "identifier_bits", BitsStart: d[4], BitsEnd: d[8], Primary: d[0], Location: d[0].Location};}},
-    {"name": "PRIMARY", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "_", "EXPRESSION", "_", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return {Type: "primary", PrimaryType: "identifier_bit2", BitsStart: null, BitsEnd: null, Primary: d[0], Expression: d[4], Width:1, Location: d[0].Location};}},
+    {"name": "PRIMARY", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "_", "EXPRESSION", "_", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) 
+        {
+            let width = {Type: "constant_expression", Location: d[4].Location, 
+                ConstantExpression: {Type: "unary", Location: d[4].Location,  
+                    Unary:{Type: "number", Location: d[4].Location, 
+                        Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: "1", Location: d[4].Location}}}};
+            return {Type: "primary", PrimaryType: "identifier_bit2", BitsStart: null, BitsEnd: null, Primary: d[0], Expression: d[4], 
+            Width: width, 
+            Location: d[0].Location};} },
     {"name": "NET_LVALUE", "symbols": ["IDENTIFIER"], "postprocess": function(d) {return {Type: "l_value", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0]};}},
     {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "UNSIGNED_NUMBER", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {
         let start = {Type: "constant_expression", Location: d[2].offset, 
@@ -163,7 +169,7 @@ var grammar = {
             return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: start, BitsEnd: end, Primary: d[0]};
         }       
         },
-    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", (lexer.has("Lbracket") ? {type: "Lbracket"} : Lbracket), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {
+    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {
         return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[2], BitsEnd: d[2], Primary: d[0], Expression: d[2], Width: 1};} 
                 },
     {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("colon") ? {type: "colon"} : colon), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {
