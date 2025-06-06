@@ -62,6 +62,7 @@
     <Compile Include="VerilogComponent\ErrorCheckHelpers.fs" />
     <Compile Include="VerilogComponent\ErrorCheckProcedural.fs" />
     <Compile Include="VerilogComponent\ErrorCheck.fs" />
+    <Compile Include="VerilogComponent\VerilogUnroller.fs" />
     <Compile Include="VerilogComponent\SheetCreator.fs" /> 
     <Compile Include="VerilogComponent\CodeEditorHelpers.fs" />   
    

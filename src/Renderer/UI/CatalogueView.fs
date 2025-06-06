@@ -29,6 +29,7 @@ open System
 open TopMenuView
 open MenuHelpers
 open SheetCreator
+open VerilogUnroller
 open ParameterTypes
 
 NearleyBindings.importGrammar
@@ -648,12 +649,16 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
 
                 let parsedCodeNearley = parseFromFile(code)
                 let output = Json.parseAs<ParserOutput> parsedCodeNearley
+                let linesIndex = Option.get output.NewLinesIndex |> Array.toList
                 let result = Option.get output.Result
                 let fixedAST = fix result
                 let parsedAST = fixedAST |> Json.parseAs<VerilogInput>
+                let unrolledAST = 
+                    match unrollVerilog parsedAST linesIndex with
+                    | Ok ast -> ast
+                    | Error _ -> failwithf "Unrolling failed, shouldn't happen at this point"
 
-
-                let SheetCreatorOutput = SheetCreator.createSheet parsedAST project
+                let SheetCreatorOutput = SheetCreator.createSheet unrolledAST project
                 let cs = SheetCreatorOutput.CState
                 
                 // Creating parameter_defs type for the sheet
@@ -695,10 +700,16 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
 
                 let parsedCodeNearley = parseFromFile(code)
                 let output = Json.parseAs<ParserOutput> parsedCodeNearley
+                let linesIndex = Option.get output.NewLinesIndex |> Array.toList
                 let result = Option.get output.Result
                 let fixedAST = fix result
                 let parsedAST = fixedAST |> Json.parseAs<VerilogInput>
-                let SheetCreatorOutput = SheetCreator.createSheet parsedAST project
+                let unrolledAST = 
+                    match unrollVerilog parsedAST linesIndex with
+                    | Ok ast -> ast
+                    | Error _ -> failwithf "Unrolling failed, shouldn't happen at this point"
+
+                let SheetCreatorOutput = SheetCreator.createSheet unrolledAST project
                 let newCS: Component list * List<Connection> = SheetCreatorOutput.CState
                 let newParameterDefs: ParameterDefs = SheetCreatorOutput.parameterDefs
 
@@ -724,10 +735,18 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                         let result = Option.get output.Result
                         let fixedAST = fix result
                         let linesIndex = Option.get output.NewLinesIndex |> Array.toList
-                        let parsedAST = fixedAST |> Json.parseAs<VerilogInput>   
-                        // let unrolledAST, unrollingErrors = VerilogUnroller.unrollVerilog parsedAST                     
+                        let parsedAST = fixedAST |> Json.parseAs<VerilogInput>
                         let moduleName = parsedAST.Module.ModuleName.Name
-                        let errorList = ErrorCheck.getSemanticErrors parsedAST linesIndex origin project
+
+                        printfn "parsedAST: %A" parsedAST
+                        let unrolledAST= unrollVerilog parsedAST linesIndex
+                        printfn "unrolledAST: %A" unrolledAST
+
+                        let errorList = 
+                            match unrolledAST with
+                            | Error unrolling_error -> unrolling_error
+                            | Ok ast -> ErrorCheck.getSemanticErrors ast linesIndex origin project
+
                         let dataUpdated = {dialogData with VerilogErrors = errorList; VerilogCode=Some code}
                         let showErrors' = 
                             match List.isEmpty errorList with
@@ -753,8 +772,12 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                     let result = Option.get output.Result
                     let fixedAST = fix result
                     let linesIndex = Option.get output.NewLinesIndex |> Array.toList
-                    let parsedAST = fixedAST |> Json.parseAs<VerilogInput>      
-                    let ioDecls = parsedAST.Module.ModuleItems.ItemList |> Array.filter (fun item -> Option.isSome item.IODecl)
+                    let parsedAST = fixedAST |> Json.parseAs<VerilogInput> 
+                    let unrolledAST = 
+                        match unrollVerilog parsedAST linesIndex with
+                        | Ok ast -> ast
+                        | Error _ -> failwithf "Unrolling failed, shouldn't happen at this point"
+                    let ioDecls = unrolledAST.Module.ModuleItems.ItemList |> Array.filter (fun item -> Option.isSome item.IODecl)
                     let lastIODecl = Array.tryLast ioDecls
                     let lastIOLocation =
                         match lastIODecl with
@@ -762,7 +785,7 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                         |None -> 1
                     let prevIndexIO = List.findIndexBack (fun x -> isSmallerThan lastIOLocation x) linesIndex
                     
-                    let assignments = parsedAST.Module.ModuleItems.ItemList |> Array.filter (fun item -> Option.isSome item.Statement)
+                    let assignments = unrolledAST.Module.ModuleItems.ItemList |> Array.filter (fun item -> Option.isSome item.Statement)
                     let lastAssignment = Array.tryLast assignments
                     let lastAssignmentLocation =
                         match lastAssignment with
