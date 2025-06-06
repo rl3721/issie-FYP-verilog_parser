@@ -85,7 +85,7 @@ MULTIPLICATIVE
 
 REDUCTION_OR_NEGATION  # TODO: change such that unary operator not need parenthesis, double check for order of operations
     -> %lparen _ UNARY_OPERATOR _ UNARY _ %rparen {%function(d) {return {Type: "reduction", Operator:d[2].value, Unary: d[4], Location: d[2].offset};} %}
-    | %not _ UNARY {%function(d) {return {Type: "negation", Operator: "~", Unary: d[2], Location: d[2].offset};} %}
+    | %not _ UNARY {%function(d) {return {Type: "negation", Operator: "~", Unary: d[2], Location: d[0].offset};} %}
     | UNARY {%function(d) {return {Type: "unary", Unary: d[0], Location: d[0].Location};} %}
 
 #### 8.4 Primaries ####

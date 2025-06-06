@@ -135,7 +135,7 @@ var grammar = {
     {"name": "MULTIPLICATIVE", "symbols": ["MULTIPLICATIVE", "_", "MULTIPLICATION_OPERATOR", "_", "REDUCTION_OR_NEGATION"], "postprocess": function(d) {return {Type: "multiplicative", Operator:d[2].value, Head: d[0], Tail: d[4], Location: d[2].offset};}},
     {"name": "MULTIPLICATIVE", "symbols": ["REDUCTION_OR_NEGATION"], "postprocess": id},
     {"name": "REDUCTION_OR_NEGATION", "symbols": [(lexer.has("lparen") ? {type: "lparen"} : lparen), "_", "UNARY_OPERATOR", "_", "UNARY", "_", (lexer.has("rparen") ? {type: "rparen"} : rparen)], "postprocess": function(d) {return {Type: "reduction", Operator:d[2].value, Unary: d[4], Location: d[2].offset};}},
-    {"name": "REDUCTION_OR_NEGATION", "symbols": [(lexer.has("not") ? {type: "not"} : not), "_", "UNARY"], "postprocess": function(d) {return {Type: "negation", Operator: "~", Unary: d[2], Location: d[2].offset};}},
+    {"name": "REDUCTION_OR_NEGATION", "symbols": [(lexer.has("not") ? {type: "not"} : not), "_", "UNARY"], "postprocess": function(d) {return {Type: "negation", Operator: "~", Unary: d[2], Location: d[0].offset};}},
     {"name": "REDUCTION_OR_NEGATION", "symbols": ["UNARY"], "postprocess": function(d) {return {Type: "unary", Unary: d[0], Location: d[0].Location};}},
     {"name": "UNARY", "symbols": ["PRIMARY"], "postprocess": function(d) {return {Type: "primary", Primary: d[0], Number: null, Expression: d[0].Expression, Location: d[0].Location};}},
     {"name": "UNARY", "symbols": ["NUMBER"], "postprocess": function(d) {return {Type: "number", Primary: null, Number: d[0], Expression: null, Location: d[0].Location};}},
@@ -145,7 +145,7 @@ var grammar = {
     {"name": "PRIMARY", "symbols": ["IDENTIFIER", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "RANGE_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess":  function(d) {
             return {
                 Type: "primary",
-                PrimaryType: "identifier_bit2",
+                PrimaryType: "identifier_bit_variable",
                 Primary: d[0],
                 Expression: d[2].lsb,
                 Width:d[2].width,
@@ -277,7 +277,7 @@ var grammar = {
                 },
     {"name": "VARIABLE_LVALUE", "symbols": ["NET_LVALUE"], "postprocess": id},
     {"name": "VARIABLE_LVALUE", "symbols": ["VARIABLE_BITSELECT_L_VALUE"], "postprocess": id},
-    {"name": "VARIABLE_BITSELECT_L_VALUE", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: null, BitsEnd: null, Primary: d[0], VariableBitSelect: d[3], Width: 1};}},
+    {"name": "VARIABLE_BITSELECT_L_VALUE", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return {Type: "l_value", PrimaryType: "identifier_bit_variable", BitsStart: null, BitsEnd: null, Primary: d[0], VariableBitSelect: d[3], Width: 1};}},
     {"name": "EQUALITY_OPERATOR", "symbols": [(lexer.has("eq") ? {type: "eq"} : eq)], "postprocess": id},
     {"name": "EQUALITY_OPERATOR", "symbols": [(lexer.has("neq") ? {type: "neq"} : neq)], "postprocess": id},
     {"name": "RELATIONAL_OPERATOR", "symbols": [(lexer.has("lt") ? {type: "lt"} : lt)], "postprocess": id},

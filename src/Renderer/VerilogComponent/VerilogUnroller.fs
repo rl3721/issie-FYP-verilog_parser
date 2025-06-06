@@ -300,7 +300,19 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                                 let width_val = evaluateConstantExpression ctx width
                                 Some (makeConstantExpressionWithNum (width_val, width.Location)) // replace the width with a constant expression
                             | None -> None // no width, so we just return None
-                        let new_primary = {primary with Primary = new_primary_identifier; Width = new_width}
+                        let new_start_bit =
+                            match primary.BitsStart with
+                            | Some bits_start ->
+                                let start_val = evaluateConstantExpression ctx bits_start
+                                Some (makeConstantExpressionWithNum (start_val, bits_start.Location)) // replace the bits start with a constant expression
+                            | None -> None // no bits start, so we just return None
+                        let new_end_bit =
+                            match primary.BitsEnd with
+                            | Some bits_end ->
+                                let end_val = evaluateConstantExpression ctx bits_end
+                                Some (makeConstantExpressionWithNum (end_val, bits_end.Location)) // replace the bits end with a constant expression
+                            | None -> None // no bits end, so we just return None
+                        let new_primary = {primary with Primary = new_primary_identifier; Width = new_width; BitsStart = new_start_bit; BitsEnd = new_end_bit}
                         {unary with Primary = Some new_primary; Expression = new_expression} // replace the unary with the new unary
                     | None ->
                         // if the primary is not a compile time variable or a declaration name, we just return the unary as is
@@ -443,6 +455,91 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 let new_always_construct = {always_construct with Statement = new_statement} // replace the always construct with the unrolled statement
                 let new_item = {item with ItemType = "always_construct"; AlwaysConstruct = Some new_always_construct} // replace the item with the unrolled always construct
                 ctx, [new_item] // return the item as is, no need to unroll
+            | "module_instantiation" ->
+                let module_instantiation = item.ModuleInstantiation.Value
+                let identifier = module_instantiation.Identifier
+
+                let new_name_prefix = 
+                    match ctx.Scopes.Head.scope_name with
+                    | "global" -> "" // global scope has no prefix
+                    | string -> string + "_" // prefix the name with the scope name, so we can distinguish between declarations in different scopes
+                let new_name = new_name_prefix + identifier.Name // prefix the identifier name with the scope name
+                let new_identifier = {identifier with Name = new_name} // replace the identifier name with the new name
+                let new_connections = 
+                    module_instantiation.Connections
+                    |> Array.map (fun conn ->
+                        let conn_primary = conn.Primary
+                        let new_identifier = 
+                            match ctx.getDeclName conn_primary.Primary.Name with
+                            | Some new_name -> {conn_primary.Primary with Name = new_name} // replace the primary with the new primary from the context
+                            | None -> conn_primary.Primary // if not found, just return the original primary
+                        let new_width =
+                            match conn_primary.Width with
+                            | Some width ->
+                                let width_val = evaluateConstantExpression ctx width
+                                Some (makeConstantExpressionWithNum (width_val, width.Location)) // replace the width with a constant expression
+                            | None -> None // no width, so we just return None
+                        let new_bits_start =
+                            match conn_primary.BitsStart with
+                            | Some bits_start ->
+                                let start_val = evaluateConstantExpression ctx bits_start
+                                Some (makeConstantExpressionWithNum (start_val, bits_start.Location)) // replace the bits start with a constant expression
+                            | None -> None // no bits start, so we just return None
+                        let new_bits_end =
+                            match conn_primary.BitsEnd with
+                            | Some bits_end ->
+                                let end_val = evaluateConstantExpression ctx bits_end
+                                Some (makeConstantExpressionWithNum (end_val, bits_end.Location)) // replace the bits end with a constant expression
+                            | None -> None // no bits end, so we just return None
+                        {conn with Primary = {conn_primary with Primary = new_identifier; Width = new_width; BitsStart = new_bits_start; BitsEnd = new_bits_end}} // replace the connection primary with the new primary
+                    )
+                let new_param_overrides =
+                    match module_instantiation.ParamOverrides with
+                    | Some overrides ->
+                        overrides
+                        |> List.map (fun param_override ->
+                            let param_value = evaluateConstantExpression ctx param_override.MinTypExpr
+                            {param_override with MinTypExpr = makeConstantExpressionWithNum (param_value, param_override.MinTypExpr.Location)} // replace the parameter override with a constant expression
+                
+                        )
+                        |> Some // wrap the list in Some
+                    | None -> None // no parameter overrides, so we just return None
+                
+
+                let new_module_instantiation = {module_instantiation with 
+                                                    Identifier = new_identifier
+                                                    Connections = new_connections
+                                                    ParamOverrides = new_param_overrides
+                                                } // replace the module instantiation with the new identifier
+                let new_item = {item with ItemType = "module_instantiation"; ModuleInstantiation = Some new_module_instantiation} // replace the item with the unrolled module instantiation
+
+                let new_ctx = ctx.addDeclNameBinding [(identifier.Name, new_name)] // add the identifier name and the new name to the context
+                new_ctx, [new_item] // return the item as is, no need to unroll
+            | "if_generate_construct" ->
+                let if_generate_construct = item.IfGenerateConstruct.Value
+                let condition = if_generate_construct.Condition
+                let conditionValue = evaluateConstantExpression ctx condition
+                let new_ctx = ctx.pushScope (DrawHelpers.uuid ()) // push a new scope for the generate region
+                let unrolled_block_items =
+                    if conditionValue <> 0 then
+                        // if the condition is true, we unroll the if block
+                        let if_block = if_generate_construct.IfBlock
+                        if_block |> List.fold (fun (ctx, acc) item ->
+                            let newCtx, unrolledItem = unrollItem ctx item
+                            newCtx, acc @ [unrolledItem]
+                        ) (new_ctx, [])
+                        |> snd // now we only care about the unrolled items, don't care about the context
+                    else
+                        // if the condition is false, we unroll the else block
+                        let else_block = if_generate_construct.ElseBlock
+                        else_block |> List.fold (fun (ctx, acc) item ->
+                            let newCtx, unrolledItem = unrollItem ctx item
+                            newCtx, acc @ [unrolledItem]
+                        ) (new_ctx, []) // context starts empty
+                        |> snd // now we only care about the unrolled items, don't care about the context
+                let new_item = unrolled_block_items |> List.concat
+               
+                ctx, new_item // return the item as is, no need to unroll
             | _ ->
                 // for all other items, we just return the item as is
                 printf "Unrolling item: %s\n" item.ItemType
