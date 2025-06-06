@@ -106,7 +106,7 @@ PRIMARY # TODO: refactor this part such it accepts constant expressions
         {% function(d) {
             return {
                 Type: "primary",
-                PrimaryType: "identifier_bit2",
+                PrimaryType: "identifier_bit_variable",
                 Primary: d[0],
                 Expression: d[2].lsb,
                 Width:d[2].width,
@@ -117,7 +117,7 @@ PRIMARY # TODO: refactor this part such it accepts constant expressions
     # | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %rbracket 
     #     {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit", BitsStart: d[4], BitsEnd: d[4], Primary: d[0], Location: d[0].Location};} %}
     # | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %colon _ UNSIGNED_NUMBER _ %rbracket 
-    #     {%function(d) {return {Type: "primary", PrimaryType: "identifier_bits", BitsStart: d[4], BitsEnd: d[8], Primary: d[0], Location: d[0].Location};} %}
+    #     {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit", BitsStart: d[4], BitsEnd: d[8], Primary: d[0], Location: d[0].Location};} %}
 
 
 RANGE_EXPRESSION
@@ -244,7 +244,7 @@ NET_LVALUE
                 ConstantExpression: {Type: "unary", Location: d[4].offset, 
                     Unary:{Type: "number", Location: d[4].offset, 
                         Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[5], Location: d[4].offset}}}};
-            return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: start, BitsEnd: end, Primary: d[0]};
+            return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: start, BitsEnd: end, Primary: d[0]};
         }       
         %}
     | IDENTIFIER %lbracket CONSTANT_EXPRESSION %rbracket 
@@ -253,7 +253,7 @@ NET_LVALUE
         %}
     | IDENTIFIER %lbracket CONSTANT_EXPRESSION %colon CONSTANT_EXPRESSION %rbracket 
         {%function(d) {
-            return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: d[2], BitsEnd: d[4], Primary: d[0], Width: 1};} 
+            return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[2], BitsEnd: d[4], Primary: d[0], Width: 1};} 
         %}
 
 
@@ -262,8 +262,8 @@ VARIABLE_LVALUE -> # TODO: fix this
     | VARIABLE_BITSELECT_L_VALUE {% id %}
 
 VARIABLE_BITSELECT_L_VALUE
-    -> IDENTIFIER _ %lbracket EXPRESSION %rbracket {%function(d) {return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: null, BitsEnd: null, Primary: d[0], VariableBitSelect: d[3], Width: 1};} %}
-    #| IDENTIFIER _ %lbracket EXPRESSION _ %minus _ %colon UNSIGNED_NUMBER %rbracket {%function(d) {return {Type: "l_value", PrimaryType: "identifier_bits", BitsStart: null, BitsEnd: null, Primary: d[0], VariableBitSelect: d[3], Width: parseInt(d[8].value)};} %} 
+    -> IDENTIFIER _ %lbracket EXPRESSION %rbracket {%function(d) {return {Type: "l_value", PrimaryType: "identifier_bit_variable", BitsStart: null, BitsEnd: null, Primary: d[0], VariableBitSelect: d[3], Width: 1};} %}
+    #| IDENTIFIER _ %lbracket EXPRESSION _ %minus _ %colon UNSIGNED_NUMBER %rbracket {%function(d) {return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: null, BitsEnd: null, Primary: d[0], VariableBitSelect: d[3], Width: parseInt(d[8].value)};} %} 
 
 
 

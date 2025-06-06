@@ -61,7 +61,13 @@ type BlockingAssignT = {Operator: string; Assignment: AssignmentT}
 
 type SeqBlockT = {Type: string; Statements: StatementT array; Location: int}
 
-and StatementT = {Type: string; StatementType: string; NonBlockingAssign: NonBlockingAssignT option; BlockingAssign: BlockingAssignT option; SeqBlock: SeqBlockT option; Conditional: ConditionalT option; CaseStatement: CaseStatementT option; Location: int}
+and StatementT = {Type: string; StatementType: string; 
+                    NonBlockingAssign: NonBlockingAssignT option; 
+                    BlockingAssign: BlockingAssignT option; 
+                    SeqBlock: SeqBlockT option; 
+                    Conditional: ConditionalT option; 
+                    CaseStatement: CaseStatementT option; 
+                    Location: int}
 
 and IfStatementT = {Type: string; Condition: ExpressionT; Statement: StatementT; Location: int}
 

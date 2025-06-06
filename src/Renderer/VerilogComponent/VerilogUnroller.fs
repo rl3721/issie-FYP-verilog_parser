@@ -19,6 +19,8 @@ type scope = {
 
     // the compile time variables in the scope including genvars and parameters
     compile_var_bind: Map<string, int> 
+    // keep track of the declarations in the scope such names with added prefix can be later resolved
+    decl_name_binding: Map<string, string>
 }
 
 type context = {
@@ -28,7 +30,9 @@ type context with
     member this.pushScope (scope_name: string) =
         // push a new scope to the context, this is used for generate regions
         {this with Scopes = {scope_name = scope_name; 
-                            compile_var_bind = this.Scopes.Head.compile_var_bind} :: this.Scopes}
+                            compile_var_bind = this.Scopes.Head.compile_var_bind;
+                            decl_name_binding = this.Scopes.Head.decl_name_binding;
+                            } :: this.Scopes}
     member this.popScope () =
         // pop the last scope from the context, this is used for generate regions
         match this.Scopes with
@@ -49,6 +53,21 @@ type context with
         | [] -> failwith "Shouldn't happen, Cannot get compile var from empty context"
         | head :: _ ->
             Map.tryFind var_name head.compile_var_bind
+    member this.addDeclNameBinding (new_bind) =
+        // add a declaration name binding to the current scope
+        match this.Scopes with
+        | [] -> failwith "Shouldn't happen, Cannot add decl name binding to empty context"
+        | head :: rest ->
+            let old_bind_list = this.Scopes.Head.decl_name_binding |> Map.toList
+            let new_bind_map = Map.ofList (old_bind_list @ new_bind)
+            {this with Scopes = {head with decl_name_binding = new_bind_map} :: rest}
+
+    member this.getDeclName (name: string) =
+        // get a declaration name binding from the current scope
+        match this.Scopes with
+        | [] -> failwith "Shouldn't happen, Cannot get decl name from empty context"
+        | head :: _ ->
+            Map.tryFind name head.decl_name_binding
             
 
 let evaluateConstantExpression (ctx: context) (expr: ConstantExpressionT)=
@@ -153,6 +172,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
             Scopes = [{
                 scope_name = "global"
                 compile_var_bind = Map.empty // global scope starts with no compile time variables
+                decl_name_binding = Map.empty // global scope starts with no declaration name bindings
             }]
         }
 
@@ -186,12 +206,24 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                     match ctx.Scopes.Head.scope_name with
                     | "global" -> "" // global scope has no prefix
                     | string -> string + "_" // prefix the name with the scope name, so we can distinguish between declarations in different scopes
-                let new_variables = 
+                let new_variables_bindings = 
                     decl.Variables
                     |> Array.map (fun var ->
                         let new_name = new_name_prefix + var.Name // prefix the variable name with the scope name
-                        {var with Name = new_name} // replace the variable name with the new name
+                        var, {var with Name = new_name} // replace the variable name with the new name
                     )
+                let new_variables =
+                    new_variables_bindings
+                    |> Array.map (snd)
+            
+                let new_ctx = 
+                    ctx.addDeclNameBinding (
+                        new_variables_bindings 
+                        |> Array.map (fun (var, new_var) -> 
+                            var.Name, new_var.Name // add the variable name and the new name to the context
+                        )
+                        |> Array.toList) // add the new variable bindings to the context
+    
                 let new_range = 
                     match decl.Range with
                     | Some range -> 
@@ -203,9 +235,165 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                             makeConstantExpressionWithNum (end_val, range.End.Location)
                         Some {range with Start = new_start; End = new_end} // replace the range with the new range
                     | None -> None // no range, so we just return None
-                ctx, [{item with Decl = Some {decl with Variables = new_variables; Range = new_range}}]
+                new_ctx, [{item with Decl = Some {decl with Variables = new_variables; Range = new_range}}]
             | _ ->
                 ctx, [item] // for all other item types, just return the item as is
+
+        let rec unrollExpression (ctx: context) (expr: ExpressionT) =
+            match expr.Unary with 
+            | None ->
+                match expr.Head, expr.Tail with
+                | Some head, Some tail ->
+                    let new_head = unrollExpression ctx head
+                    let new_tail = unrollExpression ctx tail
+                    {expr with Head = Some new_head; Tail = Some new_tail}
+                | Some head, None ->
+                    let new_head = unrollExpression ctx head
+                    {expr with Head = Some new_head; Tail = None}
+                | None, Some tail ->
+                    let new_tail = unrollExpression ctx tail
+                    {expr with Head = None; Tail = Some new_tail}
+                | None, None -> expr // no head or tail, just return the expression as is
+            | Some unary ->
+                let new_unary = unrollUnary ctx unary
+                {expr with Unary = Some new_unary}
+        and unrollUnary (ctx: context) (unary: UnaryT) =
+            match unary.Type with
+            | "number" ->
+                // for numbers, we just return the unary as is, as it is already a constant expression
+                unary
+            | "parenthesis" ->
+                // for parenthesis, we unroll the expression inside the parenthesis
+                let new_expr = unrollExpression ctx unary.Expression.Value
+                {unary with Expression = Some new_expr}
+            | "primary" -> 
+                let primary = unary.Primary.Value
+                let expression = unary.Expression
+                let new_expression =
+                    match expression with
+                    | Some expr -> Some (unrollExpression ctx expr)
+                    | None -> None
+                match ctx.getCompileVar primary.Primary.Name with
+                | Some value -> 
+                    {
+                            Type = "number";
+                            Location = primary.Location;
+                            Primary = None;
+                            Expression = None;
+                            Number = Some {
+                                Type = "number";
+                                NumberType = "all";
+                                Bits = Some "32"; // default bits for constant expressions
+                                Base = Some "'d"; // default base for constant expressions
+                                AllNumber = Some (value |> string); // convert the value to string
+                                UnsignedNumber = None;
+                                Location = primary.Location;
+                            }
+                        }
+                | None -> 
+                    match ctx.getDeclName primary.Primary.Name with
+                    | Some new_name ->
+                        let new_primary_identifier = {primary.Primary with Name = new_name}
+                        let new_width = 
+                            match primary.Width with
+                            | Some width ->
+                                let width_val = evaluateConstantExpression ctx width
+                                Some (makeConstantExpressionWithNum (width_val, width.Location)) // replace the width with a constant expression
+                            | None -> None // no width, so we just return None
+                        let new_primary = {primary with Primary = new_primary_identifier; Width = new_width}
+                        {unary with Primary = Some new_primary; Expression = new_expression} // replace the unary with the new unary
+                    | None ->
+                        // if the primary is not a compile time variable or a declaration name, we just return the unary as is
+                        unary
+            | _ -> 
+                // for all other unary types, we just return the unary as is
+                printf "Unrolling unary: %s\n" unary.Type
+                unary // return the unary as is, no need to unroll
+
+        let unrollAssignment (ctx: context) (assignment: AssignmentT) =
+            let lhs = assignment.LHS
+            let rhs = assignment.RHS
+            let unrolled_lhs = 
+                let lhs_primary = lhs.Primary
+                let new_lhs_primary = 
+                    printf "Unrolling LHS primary: %A\n" lhs_primary
+                    printf "Current context: %A\n" ctx.Scopes.Head.decl_name_binding
+                    match ctx.getDeclName lhs_primary.Name with
+                    | Some new_name -> {lhs_primary with Name = new_name} // replace the primary with the new primary from the context
+                    | None -> lhs_primary // if not found, just return the original primary
+                let new_lhs_bitstart = 
+                    match lhs.BitsStart with
+                    | Some bits_start ->
+                        let start_val = evaluateConstantExpression ctx bits_start
+                        Some (makeConstantExpressionWithNum (start_val, bits_start.Location)) // replace the bits start with a constant expression
+                    | None -> lhs.BitsStart
+                let new_lhs_bitend =
+                    match lhs.BitsEnd with
+                    | Some bits_end ->
+                        let end_val = evaluateConstantExpression ctx bits_end
+                        Some (makeConstantExpressionWithNum (end_val, bits_end.Location)) // replace the bits end with a constant expression
+                    | None -> lhs.BitsEnd
+                let new_lhs_variable_bitselect =
+                    match lhs.VariableBitSelect with
+                    | Some var_bitselect ->
+                        Some (unrollExpression ctx var_bitselect) // unroll the variable bit select expression
+                    | None -> lhs.VariableBitSelect
+                {lhs with
+                    Primary = new_lhs_primary
+                    BitsStart = new_lhs_bitstart
+                    BitsEnd = new_lhs_bitend
+                    VariableBitSelect = new_lhs_variable_bitselect
+                }
+            let unrolled_rhs = unrollExpression ctx rhs
+            {assignment with LHS = unrolled_lhs; RHS = unrolled_rhs} // replace the assignment with the unrolled
+
+        let rec unrollStatement (ctx: context) (statement: StatementT) =
+            match statement.StatementType with
+            | "conditional" -> 
+                let conditional = statement.Conditional.Value
+                let if_statement = conditional.IfStatement
+                let new_condition = unrollExpression ctx if_statement.Condition
+                let new_if_statement = unrollStatement ctx if_statement.Statement
+                let new_else_statement =
+                    match conditional.ElseStatement with
+                    | Some else_statement -> Some (unrollStatement ctx else_statement)
+                    | None -> None // no else statement, so we just return None
+                let new_conditional = {conditional with IfStatement = {if_statement with Condition = new_condition; Statement = new_if_statement}; ElseStatement = new_else_statement}
+                {statement with Conditional = Some new_conditional} // replace the statement with the unrolled conditional
+            | "nonblocking_assignment" ->
+                let nonblocking_assign = statement.NonBlockingAssign.Value
+                let new_assignment = unrollAssignment ctx nonblocking_assign.Assignment
+                {statement with NonBlockingAssign = Some {nonblocking_assign with Assignment = new_assignment}} // replace the statement with the unrolled assignment
+            | "blocking_assignment" ->
+                let blocking_assign = statement.BlockingAssign.Value
+                let new_assignment = unrollAssignment ctx blocking_assign.Assignment
+                {statement with BlockingAssign = Some {blocking_assign with Assignment = new_assignment}} // replace the statement with the unrolled assignment
+            | "seq_block" ->
+                let seq_block = statement.SeqBlock.Value
+                let new_statements = 
+                    seq_block.Statements
+                    |> Array.map (fun stmt -> unrollStatement ctx stmt) // unroll each statement in the sequence block
+                {statement with SeqBlock = Some {seq_block with Statements = new_statements}} // replace the statement with the unrolled sequence block
+            | "case_statement" ->
+                let case_statement = statement.CaseStatement.Value
+                let new_expression = unrollExpression ctx case_statement.Expression
+                let new_case_items = 
+                    case_statement.CaseItems
+                    |> Array.map (fun item ->
+                        let new_item_stat = unrollStatement ctx item.Statement
+                        {item with Statement = new_item_stat} // replace the case item statement with the unrolled statement
+                    )
+                let new_default =
+                    match case_statement.Default with
+                    | Some default_stmt -> Some (unrollStatement ctx default_stmt) // unroll the default statement if it exists
+                    | None -> None // no default statement, so we just return None
+                {statement with CaseStatement = Some {case_statement with Expression = new_expression; CaseItems = new_case_items; Default = new_default}} // replace the statement with the unrolled case statement
+            | _ ->
+                // for all other statement types, we just return the statement as is
+                printf "Unrolling statement: %s\n" statement.StatementType
+                statement // return the
+
+            // statement
 
         let rec unrollItem (ctx) (item: ItemT) =
             match item.ItemType with
@@ -241,8 +429,23 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 new_ctx, [] // genvars are not part of the unrolled items, they are just added to the context
             | "logic_declaration" ->
                 unrollDecl ctx item
+            | "statement" -> // this is for continuous assign, named as this from legacy
+                let assignment = item.Statement.Value.Assignment
+                let new_assignment = unrollAssignment ctx assignment
+                let new_cont_assign = {item.Statement.Value with Assignment = new_assignment} // replace the continuous assign with the unrolled assignment
+                let new_item = {item with ItemType = "statement"; Statement = Some new_cont_assign} // replace the item with the unrolled assignment
+                // for all other items, we just return the item as is
+                ctx, [new_item] // return the item as is, no need to unroll
+            | "always_construct" ->
+                let always_construct = item.AlwaysConstruct.Value
+                let statement = always_construct.Statement
+                let new_statement = unrollStatement ctx statement
+                let new_always_construct = {always_construct with Statement = new_statement} // replace the always construct with the unrolled statement
+                let new_item = {item with ItemType = "always_construct"; AlwaysConstruct = Some new_always_construct} // replace the item with the unrolled always construct
+                ctx, [new_item] // return the item as is, no need to unroll
             | _ ->
                 // for all other items, we just return the item as is
+                printf "Unrolling item: %s\n" item.ItemType
                 ctx, [item] // return the item as is, no need to unroll
 
         // let rec unrollItems (ctx) (item_list: ItemT list) =
