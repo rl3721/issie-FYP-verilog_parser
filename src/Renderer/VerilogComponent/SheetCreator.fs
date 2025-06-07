@@ -449,7 +449,10 @@ let createPrimaryCircuit (primary:PrimaryT) (ioAndWireToCompMap:Map<string,Compo
     |false -> 
         //let width = extractWidth inputComp.Type
         printfn "Creating primary circuit for %s with no bits" name
-        let width = Map.find name varSizeMap
+        let width = 
+            match Map.tryFind name varSizeMap with
+            | Some width -> width
+            | None -> failwithf "Primary %A has no bitsstart and bitsend, but no width found in map" primary.Primary.Name
         {Comps=[];Conns=[];Out=inputComp.OutputPorts[0];OutWidth=width}//empty list for new param slot for no bus selection
     |true ->
         let bStart= int <| ConstantExpressionToInt (Option.get primary.BitsStart) paramBindings
@@ -534,7 +537,10 @@ let getExprWidths (varSizeMap: Map<string, int>)(expr': ExpressionT) paramBindin
                 let primary = Option.get unary.Primary
                 let width, expr = 
                     match primary.BitsStart, primary.BitsEnd, unary.Expression, primary.Width with
-                    | None, None, None, _ -> Map.find (Option.get unary.Primary).Primary.Name varSizeMap, None
+                    | None, None, None, _ -> 
+                        match Map.tryFind (Option.get unary.Primary).Primary.Name varSizeMap with
+                        | Some width -> width, None
+                        | None -> failwithf "Primary %A has no bitsstart and bitsend, but no width found in map" primary.Primary.Name
                     | Some (s: ConstantExpressionT), Some e, _, _ -> 
                         let s = ConstantExpressionToInt s paramBindings //TODO: make paramslots
                         let e = ConstantExpressionToInt e paramBindings
@@ -1277,6 +1283,9 @@ let compileModule
                 let newCircuit = joinWithMerge' (LSBs @ [circuit] @ MSBs)
                 Map.add outPort newCircuit currCircuits, currentParamSlot
             | Some expr, Some w ->
+
+                let w_value = ConstantExpressionToInt w paramBindings
+                
                 let outPort = assign.LHS.Primary.Name
                 let outWidth = Map.find outPort varSizeMap
                 let rhsCircuit = mainExpressionCircuitBuilder assign.RHS varToCompMap varSizeMap paramBindings outWidth
@@ -1285,7 +1294,7 @@ let compileModule
                     | Some c -> c
                     | _ -> failwithf "This should not happen, variable doesn't have a circuit"
                 let indexCircuit = mainExpressionCircuitBuilder expr varToCompMap varSizeMap paramBindings 0
-                let const1 = createComponent (Constant1 (outWidth,  (1I <<< w) - 1I, "0b1")) "const"
+                let const1 = createComponent (Constant1 (outWidth,  (1I <<< w_value) - 1I, "0b1")) "const"
                 let const1Circuit = {Comps=[const1]; Conns=[]; Out=const1.OutputPorts[0]; OutWidth=outWidth}
                 let shiftLeft = createComponent (Shift (outWidth, indexCircuit.OutWidth, LSL)) "shift"
                 let shiftLeftCircuit = {Comps=[shiftLeft]; Conns=[]; Out=shiftLeft.OutputPorts[0]; OutWidth=outWidth}

@@ -757,11 +757,15 @@ let checkWiresAndAssignments
                 |_ -> checkAssignmentNameAndWidth assignment []
             |> checkNamesOnRHSOfAssignment assignment.RHS currentInputWireList
             |> (fun errlst -> 
+                // printf "Checking LHS of assignment %A\n" assignment.LHS
                 match assignment.LHS.VariableBitSelect with
-                | Some expr -> checkNamesOnRHSOfAssignment expr currentInputWireList errlst
+                | Some expr -> 
+                    printf "%A" (checkNamesOnRHSOfAssignment expr currentInputWireList errlst)
+                    checkNamesOnRHSOfAssignment expr currentInputWireList errlst
                 | _ -> errlst)
             |> checkSizesOnRHSOfAssignment assignment currentInputWireSizeMap
             |> (fun errlst -> 
+                printf "error list %A\n" errlst
                 match assignment.LHS.VariableBitSelect with
                 | Some expr -> checkExpr linesLocations paramBindings currentInputWireSizeMap errlst expr
                 | _ -> errlst)
@@ -1188,7 +1192,6 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
                                 Map.add variable.Name (start_value-end_value+1) map'
                         )
                 )
-                printfn "Wire Size Map: %A" wireSizeMap
 
                 parameterParseError
                 |> nameCheck ast linesLocations origin project //name is valid (not used by another sheet/component)

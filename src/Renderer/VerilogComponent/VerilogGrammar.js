@@ -250,46 +250,13 @@ var grammar = {
     {"name": "NET_LVALUE$ebnf$1", "symbols": []},
     {"name": "NET_LVALUE$ebnf$1$subexpression$1", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return d[1]}},
     {"name": "NET_LVALUE$ebnf$1", "symbols": ["NET_LVALUE$ebnf$1", "NET_LVALUE$ebnf$1$subexpression$1"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
-    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", "NET_LVALUE$ebnf$1", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "UNSIGNED_NUMBER", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {
-        let start = {Type: "constant_expression", Location: d[2].offset, 
-            ConstantExpression: {Type: "unary", Location: d[2].offset,  
-                Unary:{Type: "number", Location: d[2].offset, 
-                    Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[3], Location: d[2].offset}}}};
-        return {Type: "l_value", PrimaryType: "identifier_bit", 
-            BitsStart: start, 
-            BitsEnd: start, 
-            Primary: d[0]};
-        } 
-                },
-    {"name": "NET_LVALUE$ebnf$2", "symbols": []},
-    {"name": "NET_LVALUE$ebnf$2$subexpression$1", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return d[1]}},
-    {"name": "NET_LVALUE$ebnf$2", "symbols": ["NET_LVALUE$ebnf$2", "NET_LVALUE$ebnf$2$subexpression$1"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
-    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", "NET_LVALUE$ebnf$2", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "UNSIGNED_NUMBER", (lexer.has("colon") ? {type: "colon"} : colon), "UNSIGNED_NUMBER", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d){
-            let start = {Type: "constant_expression", Location: d[2].offset, 
-                ConstantExpression: {Type: "unary", Location: d[2].offset, 
-                    Unary:{Type: "number", Location: d[2].offset, 
-                        Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[3], Location: d[2].offset}}}};
-            let end = {Type: "constant_expression", Location: d[4].offset, 
-                ConstantExpression: {Type: "unary", Location: d[4].offset, 
-                    Unary:{Type: "number", Location: d[4].offset, 
-                        Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[5], Location: d[4].offset}}}};
-            return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: start, BitsEnd: end, Primary: d[0]};
-        }       
-        },
-    {"name": "NET_LVALUE$ebnf$3", "symbols": []},
-    {"name": "NET_LVALUE$ebnf$3$subexpression$1", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return d[1]}},
-    {"name": "NET_LVALUE$ebnf$3", "symbols": ["NET_LVALUE$ebnf$3", "NET_LVALUE$ebnf$3$subexpression$1"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
-    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", "NET_LVALUE$ebnf$3", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {
-        return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[3], BitsEnd: d[3], Primary: d[0], Expression: d[3], Width: 1};} 
-                },
-    {"name": "NET_LVALUE$ebnf$4", "symbols": []},
-    {"name": "NET_LVALUE$ebnf$4$subexpression$1", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return d[1]}},
-    {"name": "NET_LVALUE$ebnf$4", "symbols": ["NET_LVALUE$ebnf$4", "NET_LVALUE$ebnf$4$subexpression$1"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
-    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", "NET_LVALUE$ebnf$4", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("colon") ? {type: "colon"} : colon), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {
-        return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[3], BitsEnd: d[5], Primary: d[0], Width: 1};} 
-                },
+    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER", "NET_LVALUE$ebnf$1", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "RANGE_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess":  
+        function(d) {
+            return {Type: "l_value", PrimaryType: "identifier_bit_variable", Primary: d[0], VariableBitSelect: d[3].lsb, Width: d[3].width, 
+                UnpackArrayDim: d[1]};
+        }
+            },
     {"name": "VARIABLE_LVALUE", "symbols": ["NET_LVALUE"], "postprocess": id},
-    {"name": "VARIABLE_LVALUE", "symbols": ["VARIABLE_BITSELECT_L_VALUE"], "postprocess": id},
     {"name": "VARIABLE_BITSELECT_L_VALUE", "symbols": ["IDENTIFIER", "_", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return {Type: "l_value", PrimaryType: "identifier_bit_variable", BitsStart: null, BitsEnd: null, Primary: d[0], VariableBitSelect: d[3], Width: 1};}},
     {"name": "EQUALITY_OPERATOR", "symbols": [(lexer.has("eq") ? {type: "eq"} : eq)], "postprocess": id},
     {"name": "EQUALITY_OPERATOR", "symbols": [(lexer.has("neq") ? {type: "neq"} : neq)], "postprocess": id},

@@ -63,7 +63,7 @@ type AssignmentLHST = {Type: string;
                         Primary: IdentifierT; 
                         UnpackArrayDim: (ConstantExpressionT list) option; 
                         VariableBitSelect: ExpressionT option; 
-                        Width: int option}
+                        Width: ConstantExpressionT option}
 
 type AssignmentT = {Type: string; LHS: AssignmentLHST; RHS: ExpressionT}
 

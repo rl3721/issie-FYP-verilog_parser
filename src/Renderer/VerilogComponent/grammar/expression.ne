@@ -222,44 +222,50 @@ RANGE_EXPRESSION
 
 NET_LVALUE
     -> IDENTIFIER {%function(d) {return {Type: "l_value", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0]};} %}
-    | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket UNSIGNED_NUMBER %rbracket 
-        {%function(d) {
-            let start = {Type: "constant_expression", Location: d[2].offset, 
-                ConstantExpression: {Type: "unary", Location: d[2].offset,  
-                    Unary:{Type: "number", Location: d[2].offset, 
-                        Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[3], Location: d[2].offset}}}};
-            return {Type: "l_value", PrimaryType: "identifier_bit", 
-                BitsStart: start, 
-                BitsEnd: start, 
-                Primary: d[0]};
-            } 
-        %}
-    | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket UNSIGNED_NUMBER %colon UNSIGNED_NUMBER %rbracket 
-        {%function(d){
-            let start = {Type: "constant_expression", Location: d[2].offset, 
-                ConstantExpression: {Type: "unary", Location: d[2].offset, 
-                    Unary:{Type: "number", Location: d[2].offset, 
-                        Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[3], Location: d[2].offset}}}};
-            let end = {Type: "constant_expression", Location: d[4].offset, 
-                ConstantExpression: {Type: "unary", Location: d[4].offset, 
-                    Unary:{Type: "number", Location: d[4].offset, 
-                        Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[5], Location: d[4].offset}}}};
-            return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: start, BitsEnd: end, Primary: d[0]};
-        }       
-        %}
-    | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket CONSTANT_EXPRESSION %rbracket 
-        {%function(d) {
-            return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[3], BitsEnd: d[3], Primary: d[0], Expression: d[3], Width: 1};} 
-        %}
-    | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket CONSTANT_EXPRESSION %colon CONSTANT_EXPRESSION %rbracket 
-        {%function(d) {
-            return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[3], BitsEnd: d[5], Primary: d[0], Width: 1};} 
-        %}
+    | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket RANGE_EXPRESSION %rbracket {% 
+        function(d) {
+            return {Type: "l_value", PrimaryType: "identifier_bit_variable", Primary: d[0], VariableBitSelect: d[3].lsb, Width: d[3].width, 
+                UnpackArrayDim: d[1]};
+        }
+    %} 
+    # | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket UNSIGNED_NUMBER %rbracket 
+    #     {%function(d) {
+    #         let start = {Type: "constant_expression", Location: d[2].offset, 
+    #             ConstantExpression: {Type: "unary", Location: d[2].offset,  
+    #                 Unary:{Type: "number", Location: d[2].offset, 
+    #                     Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[3], Location: d[2].offset}}}};
+    #         return {Type: "l_value", PrimaryType: "identifier_bit", 
+    #             BitsStart: start, 
+    #             BitsEnd: start, 
+    #             Primary: d[0]};
+    #         } 
+    #     %}
+    # | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket UNSIGNED_NUMBER %colon UNSIGNED_NUMBER %rbracket 
+    #     {%function(d){
+    #         let start = {Type: "constant_expression", Location: d[2].offset, 
+    #             ConstantExpression: {Type: "unary", Location: d[2].offset, 
+    #                 Unary:{Type: "number", Location: d[2].offset, 
+    #                     Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[3], Location: d[2].offset}}}};
+    #         let end = {Type: "constant_expression", Location: d[4].offset, 
+    #             ConstantExpression: {Type: "unary", Location: d[4].offset, 
+    #                 Unary:{Type: "number", Location: d[4].offset, 
+    #                     Number: {Type: "number", NumberType: "all", Bits: "32", Base: "'d", AllNumber: d[5], Location: d[4].offset}}}};
+    #         return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: start, BitsEnd: end, Primary: d[0]};
+    #     }       
+    #     %}
+    # | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket CONSTANT_EXPRESSION %rbracket 
+    #     {%function(d) {
+    #         return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[3], BitsEnd: d[3], Primary: d[0], Expression: d[3]};} 
+    #     %}
+    # | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket CONSTANT_EXPRESSION %colon CONSTANT_EXPRESSION %rbracket 
+    #     {%function(d) {
+    #         return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[3], BitsEnd: d[5], Primary: d[0]};} 
+    #     %}
 
 
 VARIABLE_LVALUE -> # TODO: fix this
     NET_LVALUE {% id %}
-    | VARIABLE_BITSELECT_L_VALUE {% id %}
+    #| VARIABLE_BITSELECT_L_VALUE {% id %}
 
 VARIABLE_BITSELECT_L_VALUE
     -> IDENTIFIER _ %lbracket EXPRESSION %rbracket {%function(d) {return {Type: "l_value", PrimaryType: "identifier_bit_variable", BitsStart: null, BitsEnd: null, Primary: d[0], VariableBitSelect: d[3], Width: 1};} %}

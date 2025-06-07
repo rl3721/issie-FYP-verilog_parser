@@ -34,15 +34,29 @@ type scope = {
 }
 
 type context = {
+    used_scope_names: int //record the used scope names, does not reset when popping scopes
     Scopes: scope list // the scopes in the context, the first scope is the global scope
 }
 type context with
     member this.pushScope () =
         // push a new scope to the context, this is used for generate regions
-        {this with Scopes = {scope_name = this.Scopes.Head.scope_name + 1; 
+        let new_ctx = {this with Scopes = {scope_name = this.used_scope_names + 1; 
                             compile_var_bind = this.Scopes.Head.compile_var_bind;
                             decl_name_binding = this.Scopes.Head.decl_name_binding;
-                            } :: this.Scopes}
+                            } :: this.Scopes; 
+                             used_scope_names = this.used_scope_names + 1
+        } // increase the used scope names
+        printf "Pushing new scope: %A\n" new_ctx
+        new_ctx // return the new context with the new scope
+
+    member this.popScope () =
+        // pop the current scope from the context, this is used for generate regions
+        match this.Scopes with
+        | [] -> failwith "Shouldn't happen, Cannot pop scope from empty context"
+        | _ :: rest -> 
+            let new_ctx = {this with Scopes = rest}
+            printf "Popping scope: %A\n" new_ctx
+            new_ctx
 
     member this.addCompileVar (new_bind) =
         printf "Adding compile time variable: %A\n" new_bind
@@ -52,6 +66,22 @@ type context with
         | head :: rest ->
             let old_bind_list = this.Scopes.Head.compile_var_bind |> Map.toList
             let new_bind_map = Map.ofList (old_bind_list @ new_bind) //new bind comes second so it overrides the old bind
+            {this with Scopes = {head with compile_var_bind = new_bind_map} :: rest}
+
+    member this.assignCompileVar (var_name: string) (value: int) (location:int) =
+        printf "Assigning compile time variable: %s with value: %d at location: %d to context %A\n" var_name value location this
+        // assign a value to a compile time variable in the current scope
+        match this.Scopes with
+        | [] -> failwith "Shouldn't happen, Cannot assign compile var to empty context"
+        | head :: rest ->
+            if Map.containsKey var_name head.compile_var_bind then
+                // if the variable already exists, we override its value
+                printf "Overriding compile time variable: %s with value: %d\n" var_name value
+            else
+                raise (VerilogUnrollerException (sprintf "using genvar %s that is undefined" var_name, location))
+            let old_bind_list = this.Scopes.Head.compile_var_bind |> Map.toList
+            let new_bind_map = 
+                Map.ofList (old_bind_list @ [(var_name, Ok value)]) // add the new binding, overriding any existing one
             {this with Scopes = {head with compile_var_bind = new_bind_map} :: rest}
     member this.getCompileVar (var_name: string) =
         // get a compile time variable from the current scope
@@ -66,9 +96,11 @@ type context with
         | head :: rest ->
             let old_bind_list = this.Scopes.Head.decl_name_binding |> Map.toList
             let new_bind_map = Map.ofList (old_bind_list @ new_bind)
-            {this with Scopes = {head with decl_name_binding = new_bind_map} :: rest}
+            let new_ctx = {this with Scopes = {head with decl_name_binding = new_bind_map} :: rest}
+            printf "Adding decl name binding: %A\n" new_ctx
+            new_ctx
 
-    member this.getDeclName (name: string) (dim_index: int list) =
+    member this.getDeclName (name: string) (dim_index: int list) (location:int) =
         // get a declaration name binding from the current scope
         match this.Scopes with
         | [] -> failwith "Shouldn't happen, Cannot get decl name from empty context"
@@ -77,7 +109,7 @@ type context with
             |> Option.bind (fun binding ->
                 // check if the dimension index is valid
                 if dim_index.Length <> List.length binding.dimension then
-                    raise (VerilogUnrollerException (sprintf "Dimension index %A does not match declaration dimension %A" dim_index binding.dimension, 0))
+                    raise (VerilogUnrollerException (sprintf "Dimension index %A does not match declaration dimension %A" dim_index binding.dimension, location))
                 else
       
                     let shape = 
@@ -167,6 +199,7 @@ let evaluateConstantExpression (ctx: context) (expr: ConstantExpressionT)=
                 // check if the identifier is a compile time variable
                 match ctx.getCompileVar primary.Primary.Name with
                 | Some r -> 
+                    printf "Context %A" ctx
                     match r with
                     | Ok value -> value // return the value of the compile time variable
                     | Error msg -> raise (VerilogUnrollerException (msg, primary.Location))
@@ -216,11 +249,11 @@ let makeConstantExpressionWithNum (num: int, location: int) =
             }
         }
     }
-let generateDimPrefix dims =
+let generateDimPrefix location dims  =
     List.foldBack
         (fun (lo, hi) acc ->
             if lo > hi then
-                raise (VerilogUnrollerException (sprintf "Invalid dimension range (%d, %d)" lo hi, 0))
+                raise (VerilogUnrollerException (sprintf "Invalid dimension range (%d, %d)" lo hi, location))
             List.collect (fun i ->
                 List.map (fun suffix ->
                     if suffix = "" then string i else $"{i}_{suffix}"
@@ -248,7 +281,8 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 scope_name = 0
                 compile_var_bind = Map.empty // global scope starts with no compile time variables
                 decl_name_binding = Map.empty // global scope starts with no declaration name bindings
-            }]
+            }];
+            used_scope_names = 0 // global scope starts with 0
         }
 
         let unrollParamDecl (ctx: context) (paramDecl: ParameterDeclarationT) =
@@ -314,7 +348,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                                         let end_val = evaluateConstantExpression ctx end_
                                         (start_val, end_val)
                                     )
-                                    |> generateDimPrefix
+                                    |> generateDimPrefix var_dim.Location// generate the dimension prefix based on the dimension
                                     |> List.map (fun dp ->
                                         scope_prefix + dp + "_" + var_dim.Identifier.Name
                                     )
@@ -362,7 +396,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                                 |> List.map (fun (start, end_) ->
                                     let start_val = evaluateConstantExpression ctx start
                                     let end_val = evaluateConstantExpression ctx end_
-                                    generateDimPrefix [(start_val, end_val)]
+                                    generateDimPrefix var_dim.Location [(start_val, end_val)]
                                     |> List.map (fun dp -> scope_prefix + dp + "_" + var_name)
                                 )
                                 |> List.concat // flatten the list of lists
@@ -441,7 +475,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                             }
                         }
                 | None -> 
-                    match ctx.getDeclName primary.Primary.Name [0] with
+                    match ctx.getDeclName primary.Primary.Name [0] primary.Primary.Location with
                     | Some new_name ->
                         let new_primary_identifier = {primary.Primary with Name = new_name}
                         let new_width = 
@@ -480,7 +514,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 let new_lhs_primary = 
                     printf "Unrolling LHS primary: %A\n" lhs_primary
                     printf "Current context: %A\n" ctx.Scopes.Head.decl_name_binding
-                    match ctx.getDeclName lhs_primary.Name [0] with
+                    match ctx.getDeclName lhs_primary.Name [0] lhs_primary.Location with
                     | Some new_name -> {lhs_primary with Name = new_name} // replace the primary with the new primary from the context
                     | None -> lhs_primary // if not found, just return the original primary
                 let new_lhs_bitstart = 
@@ -569,15 +603,15 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
             | "generate_region" ->
                 let new_ctx = ctx.pushScope ()
                 let region_items = item.GenerateRegion.Value
-                let new_region_items = 
+                let new_ctx,new_region_items = 
                     region_items
                         |> List.fold (fun (ctx, acc) item ->
                             let newCtx, unrolledItem = unrollItem ctx item
                             newCtx, acc @ [unrolledItem]
                         ) (new_ctx, []) // context starts empty
-                        |> snd // now we only care about the unrolled items, don't care about the context
-                        |> List.concat
-                ctx, new_region_items
+                        |> fun (new_ctx, acc) ->
+                            new_ctx, acc |> List.concat // flatten the list of lists
+                new_ctx.popScope(), new_region_items
             | "genvar_declaration" ->
                 let genvarId = item.GenVarId.Value
                 // let isGenvarAlreadyDeclared = 
@@ -620,7 +654,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                     |> Array.map (fun conn ->
                         let conn_primary = conn.Primary
                         let new_identifier = 
-                            match ctx.getDeclName conn_primary.Primary.Name [0] with
+                            match ctx.getDeclName conn_primary.Primary.Name [0] conn_primary.Primary.Location with
                             | Some new_name -> {conn_primary.Primary with Name = new_name} // replace the primary with the new primary from the context
                             | None -> conn_primary.Primary // if not found, just return the original primary
                         let new_width =
@@ -670,7 +704,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 let condition = if_generate_construct.Condition
                 let conditionValue = evaluateConstantExpression ctx condition
                 let new_ctx = ctx.pushScope () // push a new scope for the generate region
-                let unrolled_block_items =
+                let new_ctx, unrolled_block_items =
                     if conditionValue <> 0 then
                         // if the condition is true, we unroll the if block
                         let if_block = if_generate_construct.IfBlock
@@ -678,18 +712,16 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                             let newCtx, unrolledItem = unrollItem ctx item
                             newCtx, acc @ [unrolledItem]
                         ) (new_ctx, [])
-                        |> snd // now we only care about the unrolled items, don't care about the context
+
                     else
                         // if the condition is false, we unroll the else block
                         let else_block = if_generate_construct.ElseBlock
                         else_block |> List.fold (fun (ctx, acc) item ->
                             let newCtx, unrolledItem = unrollItem ctx item
                             newCtx, acc @ [unrolledItem]
-                        ) (new_ctx, []) // context starts empty
-                        |> snd // now we only care about the unrolled items, don't care about the context
+                        ) (new_ctx, []) // context starts empty     
                 let new_item = unrolled_block_items |> List.concat
-               
-                ctx, new_item // return the item as is, no need to unroll
+                new_ctx.popScope(), new_item // return the item as is, no need to unroll
             | "loop_generate_construct" ->
                 let loop_generate_construct = item.LoopGenerateConstruct.Value
                 let loop_id = loop_generate_construct.LoopId.Name
@@ -697,7 +729,8 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 if loop_id <> step_id then
                     raise (VerilogUnrollerException (sprintf "Loop ID %s and Step ID %s must be the same" loop_id step_id, item.Location))
 
-                let rec loopUnrollItems (ctx: context) (unrolled_items: ItemT list) iter_count =
+                let rec loopUnrollItems (ctx: context) (unrolled_items: ItemT list) (iter_count: int): (ItemT list * context) =
+                    //printf "enter context: %A\n" ctx
                     let loop_cond_value = evaluateConstantExpression ctx loop_generate_construct.CondExpr
                     if iter_count > 1000 then
                         // prevent infinite loop, if the loop condition is always true
@@ -706,30 +739,35 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                          // if the condition is true, we unroll the block
                         let new_ctx = ctx.pushScope () // push a new scope for the generate region
                         let block_items = loop_generate_construct.Block
-                        let unrolled_block_items =
+                        let new_ctx, unrolled_block_items =
                             block_items |> List.fold (fun (ctx, acc) item ->
                                 let newCtx, unrolledItem = unrollItem ctx item
                                 newCtx, acc @ [unrolledItem]
                             ) (new_ctx, [])
-                            |> snd 
-                            |> List.concat // now we only care about the unrolled items, don't care about the context
+                            |> fun (new_ctx, unrolled_items) -> // context starts empty
+                                new_ctx, unrolled_items |> List.concat // now we only care about the unrolled items, don't care about the context
+                            
                         // printf "Unrolling loop block items: %A\n" unrolled_block_items
                         // after unrolling the block, we need to update the loop variable and continue unrolling
-                        let step_value = evaluateConstantExpression ctx loop_generate_construct.StepExpr
-                        let new_ctx_with_step = new_ctx.addCompileVar [(step_id, Ok step_value)] // add the step value to the context
-                        loopUnrollItems new_ctx_with_step (unrolled_items @ unrolled_block_items) (iter_count + 1) // continue unrolling with the updated context and accumulated items
+                        let step_value = evaluateConstantExpression new_ctx loop_generate_construct.StepExpr
+                        let new_ctx_with_step = new_ctx.assignCompileVar step_id step_value loop_generate_construct.StepId.Location // add the step value to the context
+                        let next_rec_unroll, next_unroll_ctx = loopUnrollItems new_ctx_with_step (unrolled_items @ unrolled_block_items) (iter_count + 1) // continue unrolling with the updated context and accumulated items
+
+                        // let final_ctx = next_unroll_ctx.popScope () // pop the scope after unrolling
+
+                        //printf "exit context: %A\n" (next_unroll_ctx.popScope())
+                        next_rec_unroll, next_unroll_ctx.popScope()
 
                     else
                         // if the condition is false, we stop unrolling
-                        unrolled_items
+                        unrolled_items, ctx
                        
-                let start_value = evaluateConstantExpression ctx loop_generate_construct.StartExpr                      
-                let start_ctx = (ctx.pushScope ()).addCompileVar [(loop_id, Ok start_value)]
-                let unrolled_items = loopUnrollItems start_ctx [] 0 // start unrolling with the initial context and empty item list
-
-            
-                // if loop
-                ctx, unrolled_items // return the item as is, no need to unroll
+                let start_value = evaluateConstantExpression ctx loop_generate_construct.StartExpr  
+                let start_ctx = ctx.assignCompileVar loop_id start_value loop_generate_construct.LoopId.Location// add the loop variable to the context with the start value  
+                printf "Starting loop unrolling with initial context: %A\n" start_ctx                  
+                let unrolled_items, final_ctx = loopUnrollItems start_ctx [] 0 // start unrolling with the initial context and empty item list
+                printf "final ctx: %A\n" final_ctx
+                final_ctx, unrolled_items // return the item as is, no need to unroll
             | _ ->
                 // for all other items, we just return the item as is
                 printf "Unrolling item: %s\n" item.ItemType
@@ -741,7 +779,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 let newCtx, unrolledItem = unrollItem ctx item
                 newCtx, acc @ unrolledItem
             ) (context, []) // context starts empty
-            |> snd // now we only care about the unrolled items, don't care about the context
+            |> snd // most outer layer so the context is not needed anymore, do not do this in the middle of the unrolling, keep all context information
             |> Array.ofList
 
         printf "Unrolling completed, creating new Verilog structure...\n"
@@ -757,3 +795,8 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
         // if there is an error in parsing constant expressions, return it
         let extraMsg = [|{Text=sprintf "Unsupported constant expression: %s" (fst msg); Copy=false; Replace=NoReplace}|]
         Error (createErrorMessage linesIndex (snd msg) (fst msg) extraMsg "Constant Expression Parsing Error")
+    | VerilogUnrollerException msg -> 
+        // If an error occurs, we return the error message in the ErrorInfo list.
+        // if there is an error in parsing constant expressions, return it
+        let extraMsg = [|{Text=sprintf "Error while unrolling verilog code: %s" (fst msg); Copy=false; Replace=NoReplace}|]
+        Error (createErrorMessage linesIndex (snd msg) (fst msg) extraMsg "Verilog Unrolling Error")

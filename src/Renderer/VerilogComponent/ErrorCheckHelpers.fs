@@ -56,6 +56,12 @@ let rec primariesUsedInAssignment inLst (tree: ExpressionT) =
         match (Option.get (Option.get tree.Unary).Number).NumberType with
         | "all" -> 
             inLst
+            // This is a hack used by legacy code, it used helps prevent running an empty list through a list collect
+            // In that case, the collect would not run and the returned list would be empty
+            // removing all previous error messages generated
+            // additional checks are now done to check if a list is empty before running a collect so this should not be needed
+            // this is kept here in case some bug relating this in the future
+
             // let afterBitsSection = (string ((Option.get (Option.get (Option.get tree.Unary).Number).Base)[1])) + (Option.get (Option.get (Option.get tree.Unary).Number).AllNumber)
             // List.append inLst 
             //         [(
@@ -418,84 +424,92 @@ let getWidthOfExpr
         /// Check if the width of each wire/input used
     /// is within the correct range (defined range)
 let checkPrimariesWidths linesLocations currentInputWireSizeMap paramBindings localErrors (primariesRHS: PrimaryT list) =
-    primariesRHS
-    |> List.collect (fun x -> 
-        match isNullOrUndefined x.BitsStart with
-        | false ->
-            let name = x.Primary.Name
-            let bStart = int <| ConstantExpressionHelpers.ConstantExpressionToInt (Option.get x.BitsStart) paramBindings
-            let bEnd = int <| ConstantExpressionHelpers.ConstantExpressionToInt (Option.get x.BitsEnd) paramBindings
-            match bStart with   
-            |(-3) ->   // hack to identify numbers
-                if bEnd = 0 then
-                    let message = "Number can't be 0 bits wide"
-                    let extraMessages = 
-                        [|
-                            {Text="Number can't be 0 bits wide"; Copy=false;Replace=NoReplace}
-                            {Text=("The integer before 'h/'b represents the width of the number\n e.g. 12'hc7 -> 000011000111");Copy=false;Replace=NoReplace}
-                        |]
-                    List.append 
-                        localErrors 
-                        (createErrorMessage linesLocations x.Primary.Location message extraMessages "0'b")
-                else 
-                    let no = 
-                        match x.PrimaryType[0] with
-                        |'b' -> "0"+x.PrimaryType
-                        |'h' ->
-                            let withoutH = 
-                                String.mapi (fun index char -> 
-                                match index with
-                                |0 -> '0'
-                                |_ -> char
-                                ) x.PrimaryType
-                            "0x"+withoutH
-                        |_ -> 
-                            String.mapi (fun index char -> 
-                                match index with
-                                |0 -> '0'
-                                |_ -> char
-                            ) x.PrimaryType
-                    match NumberHelpers.strToIntCheckWidth bEnd no with
-                    |Ok n -> localErrors
-                    |Error _ -> 
-                        let message = sprintf "Number can't fit in %i bits" bEnd
+    let result = 
+        primariesRHS
+        |> List.collect (fun x -> 
+            match isNullOrUndefined x.BitsStart with
+            | false ->
+                let name = x.Primary.Name
+                let bStart = int <| ConstantExpressionHelpers.ConstantExpressionToInt (Option.get x.BitsStart) paramBindings
+                let bEnd = int <| ConstantExpressionHelpers.ConstantExpressionToInt (Option.get x.BitsEnd) paramBindings
+                match bStart with   
+                |(-3) ->   // hack to identify numbers
+                    if bEnd = 0 then
+                        let message = "Number can't be 0 bits wide"
                         let extraMessages = 
                             [|
-                                {Text=sprintf "Number can't fit in %i bits" bEnd; Copy=false;Replace=NoReplace}
+                                {Text="Number can't be 0 bits wide"; Copy=false;Replace=NoReplace}
                                 {Text=("The integer before 'h/'b represents the width of the number\n e.g. 12'hc7 -> 000011000111");Copy=false;Replace=NoReplace}
                             |]
                         List.append 
                             localErrors 
                             (createErrorMessage linesLocations x.Primary.Location message extraMessages "0'b")
-                    
-            | _ -> 
-                match Map.tryFind name currentInputWireSizeMap with
-                | Some size -> 
-                    if (bStart<size) && (bEnd>=0) && (bStart>=bEnd) then
-                        localErrors //ok
                     else 
-                        let definition =
-                            match size with
-                            |1 -> " a single bit "
-                            |_ -> sprintf " %s[%i:0] " name (size-1)
-                        let usedWidth =
-                            match bStart=bEnd with
-                            |true -> sprintf " %s[%i] " name bStart
-                            |false -> sprintf " %s[%i:%i] " name bStart bEnd
-                        let message = sprintf "Wrong width of variable: '%s'" name
-                        let extraMessages = 
-                            [|
-                                {Text=(sprintf "Variable: '%s' is defined as" name)+definition+"\nTherefore,"+usedWidth+"is invalid" ; Copy=false;Replace=NoReplace}
-                            |]
-                        List.append 
-                            localErrors 
-                            (createErrorMessage linesLocations x.Primary.Location message extraMessages name)        
-                | None -> localErrors //invalid name, error found by AssignmentRHSNameCheck 
-        | true -> localErrors
-    )
+                        let no = 
+                            match x.PrimaryType[0] with
+                            |'b' -> "0"+x.PrimaryType
+                            |'h' ->
+                                let withoutH = 
+                                    String.mapi (fun index char -> 
+                                    match index with
+                                    |0 -> '0'
+                                    |_ -> char
+                                    ) x.PrimaryType
+                                "0x"+withoutH
+                            |_ -> 
+                                String.mapi (fun index char -> 
+                                    match index with
+                                    |0 -> '0'
+                                    |_ -> char
+                                ) x.PrimaryType
+                        match NumberHelpers.strToIntCheckWidth bEnd no with
+                        |Ok n -> localErrors
+                        |Error _ -> 
+                            let message = sprintf "Number can't fit in %i bits" bEnd
+                            let extraMessages = 
+                                [|
+                                    {Text=sprintf "Number can't fit in %i bits" bEnd; Copy=false;Replace=NoReplace}
+                                    {Text=("The integer before 'h/'b represents the width of the number\n e.g. 12'hc7 -> 000011000111");Copy=false;Replace=NoReplace}
+                                |]
+                            List.append 
+                                localErrors 
+                                (createErrorMessage linesLocations x.Primary.Location message extraMessages "0'b")
+                        
+                | _ -> 
+                    match Map.tryFind name currentInputWireSizeMap with
+                    | Some size -> 
+                        if (bStart<size) && (bEnd>=0) && (bStart>=bEnd) then
+                            localErrors //ok
+                        else 
+                            let definition =
+                                match size with
+                                |1 -> " a single bit "
+                                |_ -> sprintf " %s[%i:0] " name (size-1)
+                            let usedWidth =
+                                match bStart=bEnd with
+                                |true -> sprintf " %s[%i] " name bStart
+                                |false -> sprintf " %s[%i:%i] " name bStart bEnd
+                            let message = sprintf "Wrong width of variable: '%s'" name
+                            let extraMessages = 
+                                [|
+                                    {Text=(sprintf "Variable: '%s' is defined as" name)+definition+"\nTherefore,"+usedWidth+"is invalid" ; Copy=false;Replace=NoReplace}
+                                |]
+                            List.append 
+                                localErrors 
+                                (createErrorMessage linesLocations x.Primary.Location message extraMessages name)        
+                    | None -> localErrors //invalid name, error found by AssignmentRHSNameCheck 
+            | true -> 
+                localErrors
+        )
+    result
+
+
 let checkExpr linesLocations paramBindings currentInputWireSizeMap localErrors expr =
     let primariesRHS = primariesUsedInAssignment [] expr
-    checkPrimariesWidths linesLocations currentInputWireSizeMap paramBindings localErrors primariesRHS
+    if List.isEmpty primariesRHS then
+        localErrors
+    else
+        checkPrimariesWidths linesLocations currentInputWireSizeMap paramBindings localErrors primariesRHS
 
 let checkNumber linesLocations (num:NumberT) =
     let numBase, allNum, width = Option.get num.Base, Option.get num.AllNumber, Option.get num.Bits
@@ -593,7 +607,8 @@ let getLHSWidth (assign:AssignmentT) (varSizeMap: Map<string, int>) paramBinding
         match Map.tryFind assign.LHS.Primary.Name varSizeMap with
         | Some size -> size
         | _ -> 0 //failwithf "What? Variable doesn't have a size" // if the variable is not declared there should be different logic
-    | None, None, Some _, Some w -> w
+    | None, None, Some _, Some w -> 
+        ConstantExpressionHelpers.ConstantExpressionToInt w paramBindings
     | _ -> failwithf "Only one of bitsStart and bitsEnd present"
 
 
