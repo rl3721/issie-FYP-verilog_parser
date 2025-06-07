@@ -56,6 +56,12 @@ GENVAR_DECLARATION
 CONDITIONAL_GENERATE_CONSTRUCT
     -> IF_GENERATE_CONSTRUCT {% id %}
 
+LOOP_GENERATE_CONSTRUCT
+    -> %t_for %lparen IDENTIFIER %op_assign CONSTANT_EXPRESSION %semicolon CONSTANT_EXPRESSION %semicolon IDENTIFIER %op_assign CONSTANT_EXPRESSION %rparen GENERATE_BLOCK_OR_NULL
+        {%function(d) {
+        let loop_generate_construct = {Type: "loop_generate_construct", LoopId: d[2], StartExpr: d[4], CondExpr: d[6], StepId: d[8], StepExpr: d[10], Block: d[12], Location: d[0].offset};
+        return {Type: "item", ItemType: "loop_generate_construct", LoopGenerateConstruct: loop_generate_construct, Location: d[0].offset};} %}
+
 IF_GENERATE_CONSTRUCT
     -> %t_if %lparen CONSTANT_EXPRESSION %rparen GENERATE_BLOCK_OR_NULL 
         (%t_else GENERATE_BLOCK_OR_NULL {% 
@@ -71,7 +77,10 @@ GENERATE_BLOCK_OR_NULL
     -> MODULE_OR_GENERATE_ITEM {% function(d) {return [d[0]];} %}
     | %begin _ MODULE_OR_GENERATE_ITEM:+ %end _ 
         {% function(d) {return d[2];} %}
-    | %semicolon {% function(d,l,reject) {return [];} %}
+    | %semicolon  
+        {% function(d,l,reject) {return [];} %}
+    | %begin %end
+        {% function(d,l,reject) {return [];} %}
         
 ######################### 5. UDP declarartion and instantiation #########################
 # not implemented UDP not supported

@@ -74,6 +74,7 @@ const lexer = moo.compile({
         begin: 'begin',
         end: 'end',
         t_if: 'if',
+        t_for: 'for',
         t_else: 'else',
         t_case: 'case',
         t_endcase: 'endcase',
@@ -321,7 +322,7 @@ var grammar = {
             // } else {
             //     return  {Name: name, Location: l};
             // }
-            return  {Name: name, Location: d[0].offset};
+            return  {$type:"identifier", Name: name, Location: d[0].offset};
         }
         },
     {"name": "_$ebnf$1", "symbols": []},
@@ -353,6 +354,9 @@ var grammar = {
     {"name": "GENVAR_DECLARATION", "symbols": [(lexer.has("genvar") ? {type: "genvar"} : genvar), "IDENTIFIER", (lexer.has("semicolon") ? {type: "semicolon"} : semicolon), "_"], "postprocess": function(d) {
         return {Type: "item", ItemType: "genvar_declaration", GenVarId: d[1], Location: d[0].offset};} },
     {"name": "CONDITIONAL_GENERATE_CONSTRUCT", "symbols": ["IF_GENERATE_CONSTRUCT"], "postprocess": id},
+    {"name": "LOOP_GENERATE_CONSTRUCT", "symbols": [(lexer.has("t_for") ? {type: "t_for"} : t_for), (lexer.has("lparen") ? {type: "lparen"} : lparen), "IDENTIFIER", (lexer.has("op_assign") ? {type: "op_assign"} : op_assign), "CONSTANT_EXPRESSION", (lexer.has("semicolon") ? {type: "semicolon"} : semicolon), "CONSTANT_EXPRESSION", (lexer.has("semicolon") ? {type: "semicolon"} : semicolon), "IDENTIFIER", (lexer.has("op_assign") ? {type: "op_assign"} : op_assign), "CONSTANT_EXPRESSION", (lexer.has("rparen") ? {type: "rparen"} : rparen), "GENERATE_BLOCK_OR_NULL"], "postprocess": function(d) {
+        let loop_generate_construct = {Type: "loop_generate_construct", LoopId: d[2], StartExpr: d[4], CondExpr: d[6], StepId: d[8], StepExpr: d[10], Block: d[12], Location: d[0].offset};
+        return {Type: "item", ItemType: "loop_generate_construct", LoopGenerateConstruct: loop_generate_construct, Location: d[0].offset};} },
     {"name": "IF_GENERATE_CONSTRUCT$ebnf$1$subexpression$1", "symbols": [(lexer.has("t_else") ? {type: "t_else"} : t_else), "GENERATE_BLOCK_OR_NULL"], "postprocess":  
         function(d) {return d[1];} },
     {"name": "IF_GENERATE_CONSTRUCT$ebnf$1", "symbols": ["IF_GENERATE_CONSTRUCT$ebnf$1$subexpression$1"], "postprocess": id},
@@ -368,6 +372,7 @@ var grammar = {
     {"name": "GENERATE_BLOCK_OR_NULL$ebnf$1", "symbols": ["GENERATE_BLOCK_OR_NULL$ebnf$1", "MODULE_OR_GENERATE_ITEM"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
     {"name": "GENERATE_BLOCK_OR_NULL", "symbols": [(lexer.has("begin") ? {type: "begin"} : begin), "_", "GENERATE_BLOCK_OR_NULL$ebnf$1", (lexer.has("end") ? {type: "end"} : end), "_"], "postprocess": function(d) {return d[2];}},
     {"name": "GENERATE_BLOCK_OR_NULL", "symbols": [(lexer.has("semicolon") ? {type: "semicolon"} : semicolon)], "postprocess": function(d,l,reject) {return [];}},
+    {"name": "GENERATE_BLOCK_OR_NULL", "symbols": [(lexer.has("begin") ? {type: "begin"} : begin), (lexer.has("end") ? {type: "end"} : end)], "postprocess": function(d,l,reject) {return [];}},
     {"name": "CONTINUOUS_ASSIGN", "symbols": [(lexer.has("assign") ? {type: "assign"} : assign), "_", "NET_ASSIGNMENT", "_", (lexer.has("semicolon") ? {type: "semicolon"} : semicolon)], "postprocess": function(d) {return {Type: "statement", StatementType: "assign", Assignment: d[2], Location: d[0].offset};}},
     {"name": "NET_ASSIGNMENT", "symbols": ["NET_LVALUE", "_", (lexer.has("op_assign") ? {type: "op_assign"} : op_assign), "_", "EXPRESSION"], "postprocess": function(d) {return {Type: "assign", LHS: d[0], RHS: d[4], Location:d[0].Primary.Location};}},
     {"name": "ALWAYS_CONSTRUCT", "symbols": [(lexer.has("always_comb") ? {type: "always_comb"} : always_comb), "_", "STATEMENT"], "postprocess": function(d) {
@@ -468,6 +473,7 @@ var grammar = {
     {"name": "MODULE_OR_GENERATE_ITEM", "symbols": ["CONTINUOUS_ASSIGN", "_"], "postprocess": function(d,l, reject) {return {Type: "module_item", ItemType: "statement", IODecl: null, Decl: null, Statement: d[0], AlwaysConstruct: null, Location: d[0].Location};}},
     {"name": "MODULE_OR_GENERATE_ITEM", "symbols": ["ALWAYS_CONSTRUCT"], "postprocess": function(d,l, reject) {return {Type: "module_item", ItemType: "always_construct", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: d[0], Location: d[0].Location};}},
     {"name": "MODULE_OR_GENERATE_ITEM", "symbols": ["MODULE_INSTANTIATION", "_"], "postprocess": function(d,l, reject) { return {Type: "module_item", ItemType: "module_instantiation", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: null, ModuleInstantiation: d[0], Location: d[0].Module.Location};}},
+    {"name": "MODULE_OR_GENERATE_ITEM", "symbols": ["LOOP_GENERATE_CONSTRUCT"], "postprocess": id},
     {"name": "MODULE_OR_GENERATE_ITEM", "symbols": ["CONDITIONAL_GENERATE_CONSTRUCT"], "postprocess": id},
     {"name": "MODULE_OR_GENERATE_IETM_DECLARATION", "symbols": ["LOGIC_DECLARATION", "_"], "postprocess": function(d,l, reject) {return {Type: "module_item", ItemType: "logic_declaration", IODecl: null, Decl: d[0], Statement: null, AlwaysConstruct: null,Location: d[0].Location};}},
     {"name": "MODULE_OR_GENERATE_IETM_DECLARATION", "symbols": ["GENVAR_DECLARATION"], "postprocess": id},

@@ -71,6 +71,7 @@ const lexer = moo.compile({
         begin: 'begin',
         end: 'end',
         t_if: 'if',
+        t_for: 'for',
         t_else: 'else',
         t_case: 'case',
         t_endcase: 'endcase',

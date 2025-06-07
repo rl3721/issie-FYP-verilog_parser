@@ -130,6 +130,9 @@ let checkCasesStatements
         ||> List.fold (fun map decl ->
             (map, decl.Variables)
             ||> Array.fold (fun map' variable -> 
+                let variable = match variable with
+                                | Identifier id -> id
+                                | IdentifierDimension dim -> dim.Identifier
                 if isNullOrUndefined decl.Range then Map.add variable.Name 0 map'
                 else 
                     let start_value = ConstantExpressionToInt ( (Option.get(decl.Range).Start)) paramBindings
@@ -234,6 +237,9 @@ let checkVariablesAlwaysAssigned
         ||> List.fold (fun map decl ->
             (map, decl.Variables)
             ||> Array.fold (fun map' variable -> 
+                let variable = match variable with
+                                | Identifier id -> id
+                                | IdentifierDimension dim -> dim.Identifier
                 if isNullOrUndefined decl.Range then Map.add variable.Name 1 map'
                 else 
                     let start_value = ConstantExpressionToInt ( (Option.get(decl.Range).Start)) paramBindings
@@ -342,6 +348,9 @@ let checkExpressions
         ||> List.fold (fun map decl ->
             (map, decl.Variables)
             ||> Array.fold (fun map' variable -> 
+                let variable = match variable with
+                                | Identifier id -> id
+                                | IdentifierDimension dim -> dim.Identifier
                 if isNullOrUndefined decl.Range then Map.add variable.Name 0 map'
                 else 
                     let start_value = ConstantExpressionToInt ( (Option.get(decl.Range).Start)) paramBindings
@@ -398,7 +407,14 @@ let checkClkNames
     let declarations = 
         foldAST getDeclarations [] (VerilogInput ast)
         |> List.toArray
-        |> Array.collect (fun decl -> decl.Variables)
+        |> Array.collect (fun decl -> 
+            decl.Variables
+            |> Array.map (fun variable ->
+                match variable with
+                | Identifier id -> id
+                | IdentifierDimension dim -> dim.Identifier
+            )
+        )
     let contAssigns = 
         foldAST getContAssignments [] (VerilogInput ast)
         |> List.toArray
@@ -613,7 +629,11 @@ let checkVariablesUsed
         |> List.collect (fun decl -> 
             match decl.Range with
             | None -> 
-                let res = decl.Variables |> Array.map (fun var -> var.Name + "[0]") |> Array.toList
+                let res = decl.Variables |> Array.map (fun var -> 
+                    let var = match var with
+                                | Identifier id -> id
+                                | IdentifierDimension dim -> dim.Identifier
+                    var.Name + "[0]") |> Array.toList
                 res
             | Some range -> 
                 let bits = 
@@ -623,6 +643,9 @@ let checkVariablesUsed
                 let res =
                     decl.Variables
                     |> Array.collect (fun var -> 
+                        let var = match var with
+                                    | Identifier id -> id
+                                    | IdentifierDimension dim -> dim.Identifier
                         let varBits = bits |> Array.map (fun bit -> var.Name+"["+(string bit)+"]")
                         varBits)
                     |> Array.toList

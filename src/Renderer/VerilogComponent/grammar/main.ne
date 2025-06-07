@@ -92,7 +92,7 @@ MODULE_OR_GENERATE_ITEM
     | CONTINUOUS_ASSIGN _ {%function(d,l, reject) {return {Type: "module_item", ItemType: "statement", IODecl: null, Decl: null, Statement: d[0], AlwaysConstruct: null, Location: d[0].Location};} %}
     | ALWAYS_CONSTRUCT {%function(d,l, reject) {return {Type: "module_item", ItemType: "always_construct", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: d[0], Location: d[0].Location};} %}
     | MODULE_INSTANTIATION _ {%function(d,l, reject) { return {Type: "module_item", ItemType: "module_instantiation", IODecl: null, Decl: null, Statement: null, AlwaysConstruct: null, ModuleInstantiation: d[0], Location: d[0].Module.Location};} %}
-    # LOOP_GENERATE_CONSTRUCT # TODO: add support for loop generate construct
+    | LOOP_GENERATE_CONSTRUCT {% id %}
     | CONDITIONAL_GENERATE_CONSTRUCT {% id %}
     
 # subset of non port module items, declarations of nets and regs, logic declaration is part of SystemVerilog that is added

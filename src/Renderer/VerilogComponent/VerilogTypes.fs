@@ -30,11 +30,19 @@ type CodeEditorOpen =
 //////////////////////// Verilog Input Record   ///////////////////////////
 type IdentifierT = {Name: string; Location: int}
 
-type ModuleNameT = {Type : string; Name : IdentifierT}
+and IdentifierDimensionT = {Identifier: IdentifierT; Start: ConstantExpressionT option; End: ConstantExpressionT option; Location: int}
 
-type NumberT = {Type: string; NumberType: string; Bits: string option; Base: string option; UnsignedNumber: string option; AllNumber: string option; Location: int }
+and VariableTypeT = 
+    | Identifier of IdentifierT
+    | IdentifierDimension of IdentifierDimensionT
 
-type ConstantExpressionT = {Type: string; ConstantExpression: ExpressionT; Location: int}
+and ModuleNameT = {Type : string; Name : IdentifierT}
+
+and NumberT = {Type: string; NumberType: string; Bits: string option; Base: string option; UnsignedNumber: string option; AllNumber: string option; Location: int }
+
+and ConstantExpressionT = {Type: string; ConstantExpression: ExpressionT; Location: int}
+
+
 
 and PrimaryT = {Type: string; PrimaryType: string; BitsStart: ConstantExpressionT option; BitsEnd: ConstantExpressionT option; Primary: IdentifierT; Width: ConstantExpressionT option; Location: int}
 
@@ -53,7 +61,7 @@ type AssignmentT = {Type: string; LHS: AssignmentLHST; RHS: ExpressionT}
 
 type ContinuousAssignT = {Type: string; StatementType: string; Assignment : AssignmentT; Location: int} // need to add seq block, option statement array
 
-type DeclarationT = {Type: string; DeclarationType: string; Range: RangeT option; Variables: IdentifierT array; Location: int;}
+type DeclarationT = {Type: string; DeclarationType: string; Range: RangeT option; Variables: VariableTypeT array; Location: int;}
 
 type NonBlockingAssignT = {Assignment: AssignmentT}
 
@@ -93,6 +101,7 @@ type ParameterAssignmentT = {Type: string; ParameterIdentifier: IdentifierT; Par
 type ParameterDeclarationT = {Type:string; ParameterAssignmentList: ParameterAssignmentT list}
 
 type IfGenerateConstructT = {Type: string; Condition: ConstantExpressionT; IfBlock: ItemT list; ElseBlock: ItemT list; Location: int}
+and LoopGenerateConstructT = {Type: string; LoopId: IdentifierT; StartExpr: ConstantExpressionT; CondExpr: ConstantExpressionT; StepId: IdentifierT; StepExpr: ConstantExpressionT; Block: ItemT list; Location: int}
 /// The AST type for various types of module items, different fields are filled accordingly
 and ItemT =    {Type: string; 
                 ItemType: string; 
@@ -105,6 +114,7 @@ and ItemT =    {Type: string;
                 GenerateRegion: ItemT list option;
                 GenVarId: IdentifierT option;
                 IfGenerateConstruct: IfGenerateConstructT option;
+                LoopGenerateConstruct: LoopGenerateConstructT option;
                 Location: int}
 
 type ModuleItemsT = {Type : string; ItemList : ItemT array}

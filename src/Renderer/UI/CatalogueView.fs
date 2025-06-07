@@ -735,6 +735,9 @@ let rec createVerilogPopup model showExtraErrors correctedCode moduleName (origi
                         let result = Option.get output.Result
                         let fixedAST = fix result
                         let linesIndex = Option.get output.NewLinesIndex |> Array.toList
+
+                        printf "fixedAST: %A" fixedAST
+                        
                         let parsedAST = fixedAST |> Json.parseAs<VerilogInput>
                         let moduleName = parsedAST.Module.ModuleName.Name
 

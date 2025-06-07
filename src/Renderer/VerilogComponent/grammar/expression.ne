@@ -348,7 +348,7 @@ IDENTIFIER -> %IDENTIFIER {%
         // } else {
         //     return  {Name: name, Location: l};
         // }
-        return  {Name: name, Location: d[0].offset};
+        return  {$type:"identifier", Name: name, Location: d[0].offset};
     }
 %}
 

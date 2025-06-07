@@ -52,6 +52,7 @@ type ASTNode =
     | GenerateRegion of ItemT list
     | GenVarDeclaration of IdentifierT
     | IfGenerateConstruct of IfGenerateConstructT
+    | LoopGenerateConstruct of LoopGenerateConstructT
 type Module = {AST: ASTNode;}
 
 
@@ -79,19 +80,20 @@ let statementToNode (statement:StatementDU) : ASTNode =
 let getItem (item: ItemT)  =
     //printfn $"{item}"
     match item.IODecl, item.ParamDecl, item.Decl, item.Statement, item.AlwaysConstruct, 
-        item.ModuleInstantiation, item.GenerateRegion, item.GenVarId, item.IfGenerateConstruct with
-    | Some ioDecl, None, None, None, None, None, None, None, None -> IOItem ioDecl
-    | None, Some paramDecl, None, None, None, None, None, None, None -> ParamDecl paramDecl
-    | None, None, Some decl, None, None, None, None, None, None -> Declaration decl
-    | None, None, None, Some contAssign, None, None, None, None, None -> ContinuousAssign contAssign
-    | None, None, None, None, Some always, None, None, None, None -> AlwaysConstruct always
-    | None, None, None, None, None, Some moduleInst, None, None, None -> ModuleInstantiation moduleInst
-    | None, None, None, None, None, None, Some generateRegion, None, None -> GenerateRegion generateRegion
-    | None, None, None, None, None, None, None, Some genVarId, None -> GenVarDeclaration genVarId 
-    | None, None, None, None, None, None, None, None, Some ifGenConstruct -> IfGenerateConstruct ifGenConstruct
-    | anything -> 
-        printfn $"{anything}" 
-        printfn $"{item}" 
+        item.ModuleInstantiation, item.GenerateRegion, item.GenVarId, item.IfGenerateConstruct, item.LoopGenerateConstruct with
+    | Some ioDecl, None, None, None, None, None, None, None, None, None -> IOItem ioDecl
+    | None, Some paramDecl, None, None, None, None, None, None, None, None -> ParamDecl paramDecl
+    | None, None, Some decl, None, None, None, None, None, None, None -> Declaration decl
+    | None, None, None, Some contAssign, None, None, None, None, None, None -> ContinuousAssign contAssign
+    | None, None, None, None, Some always, None, None, None, None, None -> AlwaysConstruct always
+    | None, None, None, None, None, Some moduleInst, None, None, None, None -> ModuleInstantiation moduleInst
+    | None, None, None, None, None, None, Some generateRegion, None, None, None -> GenerateRegion generateRegion
+    | None, None, None, None, None, None, None, Some genVarId, None, None -> GenVarDeclaration genVarId
+    | None, None, None, None, None, None, None, None, Some ifGenConstruct, None -> IfGenerateConstruct ifGenConstruct
+    | None, None, None, None, None, None, None, None, None, Some loopGenConstruct -> LoopGenerateConstruct loopGenConstruct
+    | anything ->
+        printfn $"{anything}"
+        printfn $"{item}"   
         failwithf "Should not happen"
 
 /// Recursively folds over an ASTNode, calling folder at every level. Only explores parts where there are multiple possibilities within a Node

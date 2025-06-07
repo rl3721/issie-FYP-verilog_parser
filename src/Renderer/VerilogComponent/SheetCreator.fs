@@ -1503,11 +1503,15 @@ let compileModule
                                     Constraints=[MinVal (PInt 1, "" )]
                                 }
                             decl.Variables
-                            |> Array.choose (fun name ->
+                            |> Array.choose (fun name -> (
+                                let name = match name with
+                                            | Identifier id -> id.Name
+                                            | IdentifierDimension var -> var.Identifier.Name
                                 ioToCompMap 
-                                |> Map.tryFind name.Name 
-                                |> Option.map (fun comp -> (comp.Id, IO (name.Name.ToUpper()))) // use uppercase for IO names, as issie defaults to it
+                                |> Map.tryFind name 
+                                |> Option.map (fun comp -> (comp.Id, IO (name.ToUpper()))) // use uppercase for IO names, as issie defaults to it
                                 )
+                            )
                             |> Array.map (fun (id, slot_name) -> ({CompId=id; CompSlot=slot_name}, start_constrained_expr))
                             |> Array.toList
                     let end_slot_expr =
@@ -1521,6 +1525,9 @@ let compileModule
                                 }
                             decl.Variables
                             |> Array.choose (fun name ->
+                                let name = match name with
+                                            | Identifier id -> id
+                                            | IdentifierDimension var -> var.Identifier
                                 ioToCompMap 
                                 |> Map.tryFind name.Name 
                                 |> Option.map (fun comp -> (comp.Id, IO (name.Name.ToUpper())))
@@ -1627,6 +1634,10 @@ let createSheet input (project:Project)=
         ||> List.fold (fun map decl ->
             (map, decl.Variables)
             ||> Array.fold (fun map' variable -> 
+                let variable = 
+                    match variable with
+                    | Identifier id -> id
+                    | IdentifierDimension var -> var.Identifier
                 if Option.isNone decl.Range then 
                     Map.add variable.Name 1 map'
                 else 

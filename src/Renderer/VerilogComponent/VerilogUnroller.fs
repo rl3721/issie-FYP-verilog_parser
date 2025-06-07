@@ -13,13 +13,23 @@ open ParameterTypes
 // if we encounter an error
 exception VerilogUnrollerException of (string*int)
 
+type DeclarationNameBinding =
+    {
+        new_names: string list // the new names for the declaration, each name matches a single occurance in unpacked array
+
+        //stores the original dimension of the declaration
+        // i.e. a [0:4][0:5] will have dimension [(0,4),(0,5)], singular dimensions are represented as (0,0)
+        dimension: (int * int) list 
+    }
 type scope = {
     // an unique id for the scope, used as prefix for declarations in scope
     scope_name: string 
 
     // the compile time variables in the scope including genvars and parameters
-    compile_var_bind: Map<string, int> 
+    compile_var_bind: Map< string, (Result<int,string>) >
     // keep track of the declarations in the scope such names with added prefix can be later resolved
+
+
     decl_name_binding: Map<string, string>
 }
 
@@ -38,14 +48,14 @@ type context with
         match this.Scopes with
         | [] -> failwith "Shouldn't happen, Cannot pop scope from empty context"
         | _ :: rest -> {this with Scopes = rest} // remove the last scope
-    member this.addCompileVar (new_bind:(string*int) list) =
+    member this.addCompileVar (new_bind) =
         printf "Adding compile time variable: %A\n" new_bind
         // add a compile time variable to the current scope
         match this.Scopes with
         | [] -> failwith "Shouldn't happen, Cannot add compile var to empty context"
         | head :: rest ->
             let old_bind_list = this.Scopes.Head.compile_var_bind |> Map.toList
-            let new_bind_map = Map.ofList (old_bind_list @ new_bind)
+            let new_bind_map = Map.ofList (old_bind_list @ new_bind) //new bind comes second so it overrides the old bind
             {this with Scopes = {head with compile_var_bind = new_bind_map} :: rest}
     member this.getCompileVar (var_name: string) =
         // get a compile time variable from the current scope
@@ -95,6 +105,24 @@ let evaluateConstantExpression (ctx: context) (expr: ConstantExpressionT)=
                     else
                         headValue / tailValue
                 | _ -> raise (UnsupportedConstantExpression (sprintf "Unsupported operator %s in multiplicative expression" (Option.defaultValue "" expr.Operator), expr.Location))
+            | "comparison" ->
+                let headValue = evaluateExpression (Expression expr.Head.Value)
+                let tailValue = evaluateExpression (Expression expr.Tail.Value)
+                match expr.Operator with
+                // | Some "==" -> if headValue = tailValue then 1 else 0
+                // | Some "!=" -> if headValue <> tailValue then 1 else 0
+                | Some "<" -> if headValue < tailValue then 1 else 0
+                | Some "<=" -> if headValue <= tailValue then 1 else 0
+                | Some ">" -> if headValue > tailValue then 1 else 0
+                | Some ">=" -> if headValue >= tailValue then 1 else 0
+                | _ -> raise (UnsupportedConstantExpression (sprintf "Unsupported operator %s in comparison expression" (Option.defaultValue "" expr.Operator), expr.Location))
+            | "equality" ->
+                let headValue = evaluateExpression (Expression expr.Head.Value)
+                let tailValue = evaluateExpression (Expression expr.Tail.Value)
+                match expr.Operator with
+                | Some "==" -> if headValue = tailValue then 1 else 0
+                | Some "!=" -> if headValue <> tailValue then 1 else 0
+                | _ -> raise (UnsupportedConstantExpression (sprintf "Unsupported operator %s in equality expression" (Option.defaultValue "" expr.Operator), expr.Location))
             | "unary" ->
                 evaluateExpression (Unary expr.Unary.Value)
             | _ ->
@@ -110,7 +138,10 @@ let evaluateConstantExpression (ctx: context) (expr: ConstantExpressionT)=
             | "identifier" -> 
                 // check if the identifier is a compile time variable
                 match ctx.getCompileVar primary.Primary.Name with
-                | Some value -> value // return the value of the compile time variable
+                | Some r -> 
+                    match r with
+                    | Ok value -> value // return the value of the compile time variable
+                    | Error msg -> raise (VerilogUnrollerException (msg, primary.Location))
                 | None -> raise (UnsupportedConstantExpression (sprintf "Identifier %s not found in context" primary.Primary.Name, primary.Location))
             | _ ->
                 raise (UnsupportedConstantExpression (sprintf "Unsupported primary type %s" primary.PrimaryType, primary.Location))
@@ -183,7 +214,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 |> List.map (fun (p_assignment) ->
                     let param_name = p_assignment.ParameterIdentifier.Name
                     let param_value = evaluateConstantExpression ctx p_assignment.ParameterRHS
-                    param_name, param_value
+                    param_name, Ok param_value
                     )
             let new_ctx = 
                 ctx.addCompileVar param_bindings // add the parameter bindings to the context
@@ -206,20 +237,33 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                     match ctx.Scopes.Head.scope_name with
                     | "global" -> "" // global scope has no prefix
                     | string -> string + "_" // prefix the name with the scope name, so we can distinguish between declarations in different scopes
+
                 let new_variables_bindings = 
                     decl.Variables
                     |> Array.map (fun var ->
-                        let new_name = new_name_prefix + var.Name // prefix the variable name with the scope name
-                        var, {var with Name = new_name} // replace the variable name with the new name
+                        // printf "Unrolling variable: %A\n" var
+                        let var_u = match var with
+                                    | Identifier var -> var // extract the variable from the VariableT wrapper
+                                    | IdentifierDimension var_dim -> var_dim.Identifier // extract the identifier from the IdentifierDimensionT wrapper
+                        // printf "variable name: %A\n" var_u
+                        let new_name = new_name_prefix + var_u.Name // prefix the variable name with the scope name
+                        var, {var_u with Name = new_name} // replace the variable name with the new name
                     )
                 let new_variables =
+
                     new_variables_bindings
-                    |> Array.map (snd)
+                    |> Array.map (
+                        fun (_, new_var) -> Identifier new_var
+                    )
+
             
                 let new_ctx = 
                     ctx.addDeclNameBinding (
                         new_variables_bindings 
                         |> Array.map (fun (var, new_var) -> 
+                            let var = match var with
+                                        | Identifier v -> v // extract the variable from the VariableT wrapper
+                                        | IdentifierDimension v_dim -> v_dim.Identifier // extract the identifier from the IdentifierDimensionT wrapper
                             var.Name, new_var.Name // add the variable name and the new name to the context
                         )
                         |> Array.toList) // add the new variable bindings to the context
@@ -236,6 +280,8 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                         Some {range with Start = new_start; End = new_end} // replace the range with the new range
                     | None -> None // no range, so we just return None
                 new_ctx, [{item with Decl = Some {decl with Variables = new_variables; Range = new_range}}]
+
+                // ctx, [item]
             | _ ->
                 ctx, [item] // for all other item types, just return the item as is
 
@@ -437,7 +483,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 // if isGenvarAlreadyDeclared then
                 //     raise (VerilogUnrollerException (sprintf "Genvar %s already exists in the context" genvarId.Name, item.Location))
                 let new_ctx = 
-                    ctx.addCompileVar [(genvarId.Name, 0)] // add the genvar to the context with default value 0
+                    ctx.addCompileVar [(genvarId.Name, Error (sprintf "Genvar %s not yet assigned" (genvarId.Name)))] // add the genvar to the context with default value 0
                 new_ctx, [] // genvars are not part of the unrolled items, they are just added to the context
             | "logic_declaration" ->
                 unrollDecl ctx item
@@ -513,7 +559,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                                                 } // replace the module instantiation with the new identifier
                 let new_item = {item with ItemType = "module_instantiation"; ModuleInstantiation = Some new_module_instantiation} // replace the item with the unrolled module instantiation
 
-                let new_ctx = ctx.addDeclNameBinding [(identifier.Name, new_name)] // add the identifier name and the new name to the context
+                let new_ctx = ctx //ctx.addDeclNameBinding [(identifier.Name, new_name)] not needed, identifier of module instantiation is not used in expressions, so we don't need to add it to the context
                 new_ctx, [new_item] // return the item as is, no need to unroll
             | "if_generate_construct" ->
                 let if_generate_construct = item.IfGenerateConstruct.Value
@@ -540,56 +586,50 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 let new_item = unrolled_block_items |> List.concat
                
                 ctx, new_item // return the item as is, no need to unroll
+            | "loop_generate_construct" ->
+                let loop_generate_construct = item.LoopGenerateConstruct.Value
+                let loop_id = loop_generate_construct.LoopId.Name
+                let step_id = loop_generate_construct.StepId.Name
+                if loop_id <> step_id then
+                    raise (VerilogUnrollerException (sprintf "Loop ID %s and Step ID %s must be the same" loop_id step_id, item.Location))
+
+                let rec loopUnrollItems (ctx: context) (unrolled_items: ItemT list) iter_count =
+                    let loop_cond_value = evaluateConstantExpression ctx loop_generate_construct.CondExpr
+                    if iter_count > 1000 then
+                        // prevent infinite loop, if the loop condition is always true
+                        raise (VerilogUnrollerException ("Loop unrolling exceeded maximum iterations, prevent infinite loop", item.Location))
+                    if (loop_cond_value <> 0) then
+                         // if the condition is true, we unroll the block
+                        let new_ctx = ctx.pushScope (DrawHelpers.uuid ()) // push a new scope for the generate region
+                        let block_items = loop_generate_construct.Block
+                        let unrolled_block_items =
+                            block_items |> List.fold (fun (ctx, acc) item ->
+                                let newCtx, unrolledItem = unrollItem ctx item
+                                newCtx, acc @ [unrolledItem]
+                            ) (new_ctx, [])
+                            |> snd 
+                            |> List.concat // now we only care about the unrolled items, don't care about the context
+                        // printf "Unrolling loop block items: %A\n" unrolled_block_items
+                        // after unrolling the block, we need to update the loop variable and continue unrolling
+                        let step_value = evaluateConstantExpression ctx loop_generate_construct.StepExpr
+                        let new_ctx_with_step = new_ctx.addCompileVar [(step_id, Ok step_value)] // add the step value to the context
+                        loopUnrollItems new_ctx_with_step (unrolled_items @ unrolled_block_items) (iter_count + 1) // continue unrolling with the updated context and accumulated items
+
+                    else
+                        // if the condition is false, we stop unrolling
+                        unrolled_items
+                       
+                let start_value = evaluateConstantExpression ctx loop_generate_construct.StartExpr                      
+                let start_ctx = (ctx.pushScope (DrawHelpers.uuid ())).addCompileVar [(loop_id, Ok start_value)]
+                let unrolled_items = loopUnrollItems start_ctx [] 0 // start unrolling with the initial context and empty item list
+
+            
+                // if loop
+                ctx, unrolled_items // return the item as is, no need to unroll
             | _ ->
                 // for all other items, we just return the item as is
                 printf "Unrolling item: %s\n" item.ItemType
                 ctx, [item] // return the item as is, no need to unroll
-
-        // let rec unrollItems (ctx) (item_list: ItemT list) =
-
-        //     printf "Unrolling items with context: %A\n" ctx
-        //     List.fold (fun (genvar_bind, acc) item ->
-        //         match item.ItemType with
-        //         | "genvar_declaration" ->
-        //             // add the genvar to the param_bind context, so it can be used in expressions, default value is 0
-        //             let new_param_bind = 
-        //                 match item.GenVarId with
-        //                 | Some genvarId -> 
-        //                     let genvarName = genvarId.Name
-        //                     // add the genvar to the param_bind context
-        //                     match Map.tryFind (ParamName genvarName) paramBindings with
-        //                         | Some _ -> 
-        //                             raise (VerilogUnrollerException ((sprintf "Genvar %s already exists in the context" genvarName) , item.Location))
-        //                         | None -> Map.add (ParamName genvarName) (PInt 0) genvar_bind
-        //                 | None -> genvar_bind
-        //             (new_param_bind, acc @ [item])
-        //         | "generate_region" ->
-        //             let region_context, unrolled_region_items = 
-        //                 unrollItems genvar_bind (item.GenerateRegion.Value)
-        //             // don't use the context here, just pass it through, any genvars in the region are local
-        //             genvar_bind, acc @ unrolled_region_items 
-        //         // | "if_generate_construct" ->
-        //             // let condition = item.IfGenerateConstruct.Value.Condition
-        //             // let conditionValue = ConstantExpressionToInt condition ctx
-        //             // let block_context, unrolled_block_items =
-        //             //     if conditionValue <> 0 then
-        //             //         let if_block = item.IfGenerateConstruct.Value.IfBlock
-        //             //         unrollItems ctx if_block
-        //             //     else
-        //             //         let else_block = item.IfGenerateConstruct.Value.ElseBlock
-        //             //         unrollItems ctx else_block
-        //             // ctx, acc @ unrolled_block_items
-
-
-        //         | _ ->
-        //             printf "not rolled item: %s\n" item.ItemType
-        //             (ctx, acc @ [item])
-        //     ) (ctx, []) item_list
-        //     // ctx, item_list
-
-        // printf "Starting unrolling of items...\n"
-        // let _, unrolledItems = unrollItems paramBindings item_list
-
 
         let unrolledItems = 
             item_list

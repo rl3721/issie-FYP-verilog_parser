@@ -444,7 +444,10 @@ let checkWiresAndAssignments
     let logicNameList = 
         declarations
         |> List.collect (fun decl -> List.ofArray decl.Variables)
-        |> List.map (fun id -> id.Name)
+        |> List.map (fun id -> 
+            match id with
+            | Identifier id -> id.Name
+            | IdentifierDimension idDim -> idDim.Identifier.Name)
 
     let wireNameList' = 
         let paramNameList = 
@@ -529,6 +532,10 @@ let checkWiresAndAssignments
         let variables = decl.Variables
         (localErrors, variables)
         ||> Array.fold (fun errorList lhs ->
+            let lhs = 
+                match lhs with
+                | Identifier id -> id
+                | IdentifierDimension idDim -> idDim.Identifier
             match (Map.tryFind lhs.Name portMap, Map.tryFind lhs.Name string_param_map) with
             | (Some portType, _)  ->  //CASE 1: Invalid Name (already used variable by port)
                 let message = sprintf "Variable '%s' is already used by a port or variable" lhs.Name
@@ -713,7 +720,10 @@ let checkWiresAndAssignments
     let declarationsNames = 
         foldAST getDeclarations [] (VerilogInput(ast)) 
         |> List.collect (fun decl -> List.ofArray decl.Variables)
-        |> List.map (fun var -> var.Name)
+        |> List.map (fun var -> 
+            match var with
+            | Identifier id -> id.Name
+            | IdentifierDimension var -> var.Identifier.Name)
 
     let notUniqeWireNames = 
                 wireNameList @ declarationsNames 
@@ -1148,7 +1158,12 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
             (wireLocationMap, declarations)
             ||> List.fold (fun (wireLocMap: Map<string, int>) (decl: DeclarationT) -> 
                     (wireLocMap, decl.Variables)
-                    ||> Array.fold (fun map var -> Map.add var.Name var.Location map))
+                    ||> Array.fold (fun map var -> 
+                        let var = 
+                            match var with
+                            | Identifier id -> id
+                            | IdentifierDimension var -> var.Identifier
+                        Map.add var.Name var.Location map))
 
         
             
@@ -1161,7 +1176,12 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
                     ||> List.fold (fun map decl ->
                         (map, decl.Variables)
                         ||> Array.fold (fun map' variable -> 
-                            if isNullOrUndefined decl.Range then Map.add variable.Name 1 map'
+                            let variable = 
+                                match variable with
+                                | Identifier id -> id
+                                | IdentifierDimension var -> var.Identifier
+                            if isNullOrUndefined decl.Range then 
+                                Map.add variable.Name 1 map'
                             else 
                                 let start_value = ConstantExpressionToInt  ( (Option.get decl.Range).Start) paramBindings
                                 let end_value = ConstantExpressionToInt  ( (Option.get decl.Range).End) paramBindings
