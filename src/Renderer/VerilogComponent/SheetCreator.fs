@@ -115,6 +115,9 @@ let createComponent (compType:ComponentType) (name:string) : Component =
     let inputPorts = createPortList PortType.Input inputPortNo id
     let outputPorts = createPortList PortType.Output outputPortNo id
     
+    // let proper_name = name.TrimStart('_')
+
+    // printfn "Creating component with name %s" proper_name
     createComponent' id compType name inputPorts outputPorts
 
 

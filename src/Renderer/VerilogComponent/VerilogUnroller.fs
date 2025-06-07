@@ -22,32 +22,28 @@ type DeclarationNameBinding =
         dimension: (int * int) list 
     }
 type scope = {
-    // an unique id for the scope, used as prefix for declarations in scope
-    scope_name: string 
+    // an int to store the scope name, this continue to increase as we push scopes
+    scope_name: int 
 
     // the compile time variables in the scope including genvars and parameters
     compile_var_bind: Map< string, (Result<int,string>) >
     // keep track of the declarations in the scope such names with added prefix can be later resolved
 
 
-    decl_name_binding: Map<string, string>
+    decl_name_binding: Map<string, DeclarationNameBinding>
 }
 
 type context = {
     Scopes: scope list // the scopes in the context, the first scope is the global scope
 }
 type context with
-    member this.pushScope (scope_name: string) =
+    member this.pushScope () =
         // push a new scope to the context, this is used for generate regions
-        {this with Scopes = {scope_name = scope_name; 
+        {this with Scopes = {scope_name = this.Scopes.Head.scope_name + 1; 
                             compile_var_bind = this.Scopes.Head.compile_var_bind;
                             decl_name_binding = this.Scopes.Head.decl_name_binding;
                             } :: this.Scopes}
-    member this.popScope () =
-        // pop the last scope from the context, this is used for generate regions
-        match this.Scopes with
-        | [] -> failwith "Shouldn't happen, Cannot pop scope from empty context"
-        | _ :: rest -> {this with Scopes = rest} // remove the last scope
+
     member this.addCompileVar (new_bind) =
         printf "Adding compile time variable: %A\n" new_bind
         // add a compile time variable to the current scope
@@ -72,12 +68,44 @@ type context with
             let new_bind_map = Map.ofList (old_bind_list @ new_bind)
             {this with Scopes = {head with decl_name_binding = new_bind_map} :: rest}
 
-    member this.getDeclName (name: string) =
+    member this.getDeclName (name: string) (dim_index: int list) =
         // get a declaration name binding from the current scope
         match this.Scopes with
         | [] -> failwith "Shouldn't happen, Cannot get decl name from empty context"
         | head :: _ ->
             Map.tryFind name head.decl_name_binding
+            |> Option.bind (fun binding ->
+                // check if the dimension index is valid
+                if dim_index.Length <> List.length binding.dimension then
+                    raise (VerilogUnrollerException (sprintf "Dimension index %A does not match declaration dimension %A" dim_index binding.dimension, 0))
+                else
+      
+                    let shape = 
+                        binding.dimension
+                        |> List.map (fun (start, end_) -> end_ - start + 1)
+                    let zeroed_dim_index =
+                        List.mapi (fun i v ->
+                            v - (binding.dimension.[i] |> fst)
+                        ) dim_index
+                    let strides = 
+                        shape 
+                        |> List.tail 
+                        |> List.scan (fun acc v -> acc * v) 1 // calculate the strides for the dimensions
+                        |> List.rev 
+                        |> List.tail
+                    let flat_index = 
+                        List.zip zeroed_dim_index strides
+                        |> List.sumBy (fun (index, stride) -> index * stride)
+                    
+                    if flat_index < 0 || flat_index >= List.length binding.new_names then
+                        // if the index is out of bounds, return None
+                        None
+                    else
+                        // if the index is valid, return the name at that index
+                        Some (binding.new_names.[flat_index])
+                    
+            )
+                
             
 
 let evaluateConstantExpression (ctx: context) (expr: ConstantExpressionT)=
@@ -188,6 +216,22 @@ let makeConstantExpressionWithNum (num: int, location: int) =
             }
         }
     }
+let generateDimPrefix dims =
+    List.foldBack
+        (fun (lo, hi) acc ->
+            if lo > hi then
+                raise (VerilogUnrollerException (sprintf "Invalid dimension range (%d, %d)" lo hi, 0))
+            List.collect (fun i ->
+                List.map (fun suffix ->
+                    if suffix = "" then string i else $"{i}_{suffix}"
+                ) acc
+            ) [lo .. hi]
+        )
+        dims
+        [""]
+
+// printfn "Generating suffixes for dimensions: %A" [(0, 4); (0, 5)]
+// printfn "Generated suffixes: %A" (generateSuffixes [(0, 4); (0, 5)])
 
 let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
     printf "Unrolling Verilog module: %s\n" verilog.Module.ModuleName.Name
@@ -201,7 +245,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
 
         let context = {
             Scopes = [{
-                scope_name = "global"
+                scope_name = 0
                 compile_var_bind = Map.empty // global scope starts with no compile time variables
                 decl_name_binding = Map.empty // global scope starts with no declaration name bindings
             }]
@@ -233,41 +277,11 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
             match item.ItemType with
             | "logic_declaration" ->
                 let decl = item.Decl.Value
-                let new_name_prefix = 
+                let scope_prefix = //prefix based on the scope name, so we can distinguish between declarations in different scopes
                     match ctx.Scopes.Head.scope_name with
-                    | "global" -> "" // global scope has no prefix
-                    | string -> string + "_" // prefix the name with the scope name, so we can distinguish between declarations in different scopes
+                    | 0 -> "" 
+                    | other_val -> "_" + string other_val + "_"
 
-                let new_variables_bindings = 
-                    decl.Variables
-                    |> Array.map (fun var ->
-                        // printf "Unrolling variable: %A\n" var
-                        let var_u = match var with
-                                    | Identifier var -> var // extract the variable from the VariableT wrapper
-                                    | IdentifierDimension var_dim -> var_dim.Identifier // extract the identifier from the IdentifierDimensionT wrapper
-                        // printf "variable name: %A\n" var_u
-                        let new_name = new_name_prefix + var_u.Name // prefix the variable name with the scope name
-                        var, {var_u with Name = new_name} // replace the variable name with the new name
-                    )
-                let new_variables =
-
-                    new_variables_bindings
-                    |> Array.map (
-                        fun (_, new_var) -> Identifier new_var
-                    )
-
-            
-                let new_ctx = 
-                    ctx.addDeclNameBinding (
-                        new_variables_bindings 
-                        |> Array.map (fun (var, new_var) -> 
-                            let var = match var with
-                                        | Identifier v -> v // extract the variable from the VariableT wrapper
-                                        | IdentifierDimension v_dim -> v_dim.Identifier // extract the identifier from the IdentifierDimensionT wrapper
-                            var.Name, new_var.Name // add the variable name and the new name to the context
-                        )
-                        |> Array.toList) // add the new variable bindings to the context
-    
                 let new_range = 
                     match decl.Range with
                     | Some range -> 
@@ -279,7 +293,97 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                             makeConstantExpressionWithNum (end_val, range.End.Location)
                         Some {range with Start = new_start; End = new_end} // replace the range with the new range
                     | None -> None // no range, so we just return None
-                new_ctx, [{item with Decl = Some {decl with Variables = new_variables; Range = new_range}}]
+
+                let new_decl = 
+                    decl.Variables
+                    |> Array.toList
+                    |> List.collect (fun v ->
+                        let Location = 
+                            match v with
+                            | Identifier var_id -> var_id.Location // if the variable is a single identifier, we just use its location
+                            | IdentifierDimension var_dim -> var_dim.Identifier.Location // if the variable is an unpacked array, we use the identifier location
+                        let new_decl_names = 
+                            match v with
+                            | Identifier var_id -> [scope_prefix+ var_id.Name] // if the variable is a single identifier, we just add a prefix to the name
+                            | IdentifierDimension var_dim -> 
+                                // if the variable is an unpacked array, we need to create a prefix for each dimension
+                                let dim_prefix = 
+                                    var_dim.Dimension
+                                    |> List.map (fun (start, end_) ->
+                                        let start_val = evaluateConstantExpression ctx start
+                                        let end_val = evaluateConstantExpression ctx end_
+                                        (start_val, end_val)
+                                    )
+                                    |> generateDimPrefix
+                                    |> List.map (fun dp ->
+                                        scope_prefix + dp + "_" + var_dim.Identifier.Name
+                                    )
+                                dim_prefix
+                        let new_variable =
+                            new_decl_names
+                            |> List.map (fun new_name ->
+                                Identifier {
+                                    Name = new_name; 
+                                    Location = Location
+                                }
+                            )
+                        new_variable
+                        |> List.map (fun var ->
+                            {decl with
+                                Range = new_range;
+                                Variables = [var] |> List.toArray
+                            }
+                        )
+                    )
+                let new_item = 
+                    new_decl
+                    |> List.map (fun d ->
+                        {item with ItemType = "logic_declaration"; Decl = Some d} // replace the item with the unrolled declaration
+                        
+                    )
+
+                let new_variables_bindings = 
+                    decl.Variables
+                    |> Array.toList
+                    |> List.collect (fun var ->
+                        match var with
+                        | Identifier var_id ->
+                            let var_name = var_id.Name
+                            let new_name = scope_prefix + var_name
+                            let dim = [(0,0)]
+                            let decl_name_binding = 
+                                {new_names = [new_name]; dimension = dim} // create a new declaration name binding with the new name and dimension
+                            let var_bind = (var_name, decl_name_binding)
+                            [var_bind]
+                        | IdentifierDimension var_dim ->
+                            let var_name = var_dim.Identifier.Name
+                            let new_names = 
+                                var_dim.Dimension
+                                |> List.map (fun (start, end_) ->
+                                    let start_val = evaluateConstantExpression ctx start
+                                    let end_val = evaluateConstantExpression ctx end_
+                                    generateDimPrefix [(start_val, end_val)]
+                                    |> List.map (fun dp -> scope_prefix + dp + "_" + var_name)
+                                )
+                                |> List.concat // flatten the list of lists
+                            let dim = 
+                                var_dim.Dimension
+                                |> List.map (fun (start, end_) ->
+                                    let start_val = evaluateConstantExpression ctx start
+                                    let end_val = evaluateConstantExpression ctx end_
+                                    (start_val, end_val)
+                                )
+                            let decl_name_binding = 
+                                {new_names = new_names; dimension = dim} // create a new declaration name binding with the new names and dimension
+                            let var_bind = (var_name, decl_name_binding)
+                            [var_bind]
+                    )
+                let new_ctx = 
+                    ctx.addDeclNameBinding (
+                        new_variables_bindings 
+                        ) // add the new variable bindings to the context
+
+                new_ctx, new_item // return the new context and the new item list
 
                 // ctx, [item]
             | _ ->
@@ -337,7 +441,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                             }
                         }
                 | None -> 
-                    match ctx.getDeclName primary.Primary.Name with
+                    match ctx.getDeclName primary.Primary.Name [0] with
                     | Some new_name ->
                         let new_primary_identifier = {primary.Primary with Name = new_name}
                         let new_width = 
@@ -376,7 +480,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 let new_lhs_primary = 
                     printf "Unrolling LHS primary: %A\n" lhs_primary
                     printf "Current context: %A\n" ctx.Scopes.Head.decl_name_binding
-                    match ctx.getDeclName lhs_primary.Name with
+                    match ctx.getDeclName lhs_primary.Name [0] with
                     | Some new_name -> {lhs_primary with Name = new_name} // replace the primary with the new primary from the context
                     | None -> lhs_primary // if not found, just return the original primary
                 let new_lhs_bitstart = 
@@ -463,7 +567,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 // parameter declaration determines the context, but itself is not part of non
                 new_ctx, [item]//{item with ItemType = "parameter_declaration"; ParamDecl = Some new_decl} // replace the item with the unrolled declaration
             | "generate_region" ->
-                let new_ctx = ctx.pushScope (DrawHelpers.uuid ())
+                let new_ctx = ctx.pushScope ()
                 let region_items = item.GenerateRegion.Value
                 let new_region_items = 
                     region_items
@@ -501,22 +605,22 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 let new_always_construct = {always_construct with Statement = new_statement} // replace the always construct with the unrolled statement
                 let new_item = {item with ItemType = "always_construct"; AlwaysConstruct = Some new_always_construct} // replace the item with the unrolled always construct
                 ctx, [new_item] // return the item as is, no need to unroll
-            | "module_instantiation" ->
+            | "module_instantiation" -> //TODO: test this
                 let module_instantiation = item.ModuleInstantiation.Value
                 let identifier = module_instantiation.Identifier
 
-                let new_name_prefix = 
-                    match ctx.Scopes.Head.scope_name with
-                    | "global" -> "" // global scope has no prefix
-                    | string -> string + "_" // prefix the name with the scope name, so we can distinguish between declarations in different scopes
-                let new_name = new_name_prefix + identifier.Name // prefix the identifier name with the scope name
-                let new_identifier = {identifier with Name = new_name} // replace the identifier name with the new name
+                // let new_name_prefix = 
+                //     match ctx.Scopes.Head.scope_name with
+                //     | 0 -> "" // global scope has no prefix
+                //     | other_val -> "_" + string other_val + "_" // prefix the name with the scope name, so we can distinguish between declarations in different scopes
+                // let new_name = new_name_prefix + identifier.Name // prefix the identifier name with the scope name
+                // let new_identifier = {identifier with Name = new_name} // replace the identifier name with the new name
                 let new_connections = 
                     module_instantiation.Connections
                     |> Array.map (fun conn ->
                         let conn_primary = conn.Primary
                         let new_identifier = 
-                            match ctx.getDeclName conn_primary.Primary.Name with
+                            match ctx.getDeclName conn_primary.Primary.Name [0] with
                             | Some new_name -> {conn_primary.Primary with Name = new_name} // replace the primary with the new primary from the context
                             | None -> conn_primary.Primary // if not found, just return the original primary
                         let new_width =
@@ -553,7 +657,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 
 
                 let new_module_instantiation = {module_instantiation with 
-                                                    Identifier = new_identifier
+                                                    // Identifier = new_identifier
                                                     Connections = new_connections
                                                     ParamOverrides = new_param_overrides
                                                 } // replace the module instantiation with the new identifier
@@ -565,7 +669,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 let if_generate_construct = item.IfGenerateConstruct.Value
                 let condition = if_generate_construct.Condition
                 let conditionValue = evaluateConstantExpression ctx condition
-                let new_ctx = ctx.pushScope (DrawHelpers.uuid ()) // push a new scope for the generate region
+                let new_ctx = ctx.pushScope () // push a new scope for the generate region
                 let unrolled_block_items =
                     if conditionValue <> 0 then
                         // if the condition is true, we unroll the if block
@@ -600,7 +704,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                         raise (VerilogUnrollerException ("Loop unrolling exceeded maximum iterations, prevent infinite loop", item.Location))
                     if (loop_cond_value <> 0) then
                          // if the condition is true, we unroll the block
-                        let new_ctx = ctx.pushScope (DrawHelpers.uuid ()) // push a new scope for the generate region
+                        let new_ctx = ctx.pushScope () // push a new scope for the generate region
                         let block_items = loop_generate_construct.Block
                         let unrolled_block_items =
                             block_items |> List.fold (fun (ctx, acc) item ->
@@ -620,7 +724,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                         unrolled_items
                        
                 let start_value = evaluateConstantExpression ctx loop_generate_construct.StartExpr                      
-                let start_ctx = (ctx.pushScope (DrawHelpers.uuid ())).addCompileVar [(loop_id, Ok start_value)]
+                let start_ctx = (ctx.pushScope ()).addCompileVar [(loop_id, Ok start_value)]
                 let unrolled_items = loopUnrollItems start_ctx [] 0 // start unrolling with the initial context and empty item list
 
             

@@ -499,6 +499,13 @@ var grammar = {
     {"name": "LOGIC_DECLARATION", "symbols": [(lexer.has("bit") ? {type: "bit"} : bit), "_", "LOGIC_DECLARATION$ebnf$1", "LIST_OF_VARIABLE_IDENTIFIERS", "_", (lexer.has("semicolon") ? {type: "semicolon"} : semicolon)], "postprocess":  (d,l,r) => {
         return {Type: "declaration", DeclarationType: "internal", Range: d[2], Variables: d[3], Location: d[0].offset};} },
     {"name": "VARIABLE_TYPE", "symbols": ["IDENTIFIER"], "postprocess": id},
+    {"name": "VARIABLE_TYPE$ebnf$1$subexpression$1", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("colon") ? {type: "colon"} : colon), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return [ [d[1],d[3]] ];}},
+    {"name": "VARIABLE_TYPE$ebnf$1", "symbols": ["VARIABLE_TYPE$ebnf$1$subexpression$1"]},
+    {"name": "VARIABLE_TYPE$ebnf$1$subexpression$2", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("colon") ? {type: "colon"} : colon), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return [ [d[1],d[3]] ];}},
+    {"name": "VARIABLE_TYPE$ebnf$1", "symbols": ["VARIABLE_TYPE$ebnf$1", "VARIABLE_TYPE$ebnf$1$subexpression$2"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
+    {"name": "VARIABLE_TYPE", "symbols": ["IDENTIFIER", "VARIABLE_TYPE$ebnf$1"], "postprocess":  function(d,l,reject) {
+            return {$type: "IdentifierDimension", Identifier: d[0], Dimension: d[1].flat(), Location:d[0].Location};
+        } },
     {"name": "LIST_OF_PARAM_ASSIGNMENTS", "symbols": ["PARAM_ASSIGNMENT", (lexer.has("comma") ? {type: "comma"} : comma), "LIST_OF_PARAM_ASSIGNMENTS"], "postprocess": (d) => {return [d[0]].concat(d[2])}},
     {"name": "LIST_OF_PARAM_ASSIGNMENTS", "symbols": ["PARAM_ASSIGNMENT"], "postprocess": (d) => {return [d[0]];}},
     {"name": "LIST_OF_PORT_IDENTIFIERS", "symbols": ["PORT_IDENTIFIER", "_", (lexer.has("comma") ? {type: "comma"} : comma), "_", "LIST_OF_PORT_IDENTIFIERS"], "postprocess": function(d) {return {Type: "list_of_port_identifiers", Head: d[0], Tail: d[4]};}},

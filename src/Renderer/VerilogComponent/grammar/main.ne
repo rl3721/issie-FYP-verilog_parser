@@ -156,6 +156,10 @@ LOGIC_DECLARATION
 # TODO: add support with dimension which handles arrays
 VARIABLE_TYPE
     -> IDENTIFIER {% id %}
+    | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %colon CONSTANT_EXPRESSION %rbracket {% function(d) {return [ [d[1],d[3]] ];} %}):+ 
+        {% function(d,l,reject) {
+            return {$type: "IdentifierDimension", Identifier: d[0], Dimension: d[1].flat(), Location:d[0].Location};
+        } %}
 
 ### 2.2.2 Strenths ###
 # not implemented, strength not supported

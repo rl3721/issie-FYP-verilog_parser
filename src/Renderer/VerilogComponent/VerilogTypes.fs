@@ -30,7 +30,7 @@ type CodeEditorOpen =
 //////////////////////// Verilog Input Record   ///////////////////////////
 type IdentifierT = {Name: string; Location: int}
 
-and IdentifierDimensionT = {Identifier: IdentifierT; Start: ConstantExpressionT option; End: ConstantExpressionT option; Location: int}
+and IdentifierDimensionT = {Identifier: IdentifierT; Dimension: (ConstantExpressionT * ConstantExpressionT) list; Location: int}
 
 and VariableTypeT = 
     | Identifier of IdentifierT
