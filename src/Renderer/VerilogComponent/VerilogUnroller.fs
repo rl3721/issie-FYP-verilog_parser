@@ -279,8 +279,8 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 let decl = item.Decl.Value
                 let scope_prefix = //prefix based on the scope name, so we can distinguish between declarations in different scopes
                     match ctx.Scopes.Head.scope_name with
-                    | 0 -> "" 
-                    | other_val -> "_" + string other_val + "_"
+                    | 0 -> "_global_" 
+                    | other_val -> "_scoped" + string other_val + "_"
 
                 let new_range = 
                     match decl.Range with

@@ -222,7 +222,7 @@ RANGE_EXPRESSION
 
 NET_LVALUE
     -> IDENTIFIER {%function(d) {return {Type: "l_value", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0]};} %}
-    | IDENTIFIER _ %lbracket UNSIGNED_NUMBER %rbracket 
+    | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket UNSIGNED_NUMBER %rbracket 
         {%function(d) {
             let start = {Type: "constant_expression", Location: d[2].offset, 
                 ConstantExpression: {Type: "unary", Location: d[2].offset,  
@@ -234,7 +234,7 @@ NET_LVALUE
                 Primary: d[0]};
             } 
         %}
-    | IDENTIFIER _ %lbracket UNSIGNED_NUMBER %colon UNSIGNED_NUMBER %rbracket 
+    | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket UNSIGNED_NUMBER %colon UNSIGNED_NUMBER %rbracket 
         {%function(d){
             let start = {Type: "constant_expression", Location: d[2].offset, 
                 ConstantExpression: {Type: "unary", Location: d[2].offset, 
@@ -247,13 +247,13 @@ NET_LVALUE
             return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: start, BitsEnd: end, Primary: d[0]};
         }       
         %}
-    | IDENTIFIER %lbracket CONSTANT_EXPRESSION %rbracket 
+    | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket CONSTANT_EXPRESSION %rbracket 
         {%function(d) {
-            return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[2], BitsEnd: d[2], Primary: d[0], Expression: d[2], Width: 1};} 
+            return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[3], BitsEnd: d[3], Primary: d[0], Expression: d[3], Width: 1};} 
         %}
-    | IDENTIFIER %lbracket CONSTANT_EXPRESSION %colon CONSTANT_EXPRESSION %rbracket 
+    | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket CONSTANT_EXPRESSION %colon CONSTANT_EXPRESSION %rbracket 
         {%function(d) {
-            return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[2], BitsEnd: d[4], Primary: d[0], Width: 1};} 
+            return {Type: "l_value", PrimaryType: "identifier_bit", BitsStart: d[3], BitsEnd: d[5], Primary: d[0], Width: 1};} 
         %}
 
 
