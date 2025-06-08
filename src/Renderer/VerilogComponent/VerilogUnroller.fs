@@ -46,7 +46,7 @@ type context with
                             } :: this.Scopes; 
                              used_scope_names = this.used_scope_names + 1
         } // increase the used scope names
-        printf "Pushing new scope: %A\n" new_ctx
+        //printf "Pushing new scope: %A\n" new_ctx
         new_ctx // return the new context with the new scope
 
     member this.popScope () =
@@ -55,11 +55,11 @@ type context with
         | [] -> failwith "Shouldn't happen, Cannot pop scope from empty context"
         | _ :: rest -> 
             let new_ctx = {this with Scopes = rest}
-            printf "Popping scope: %A\n" new_ctx
+            //printf "Popping scope: %A\n" new_ctx
             new_ctx
 
     member this.addCompileVar (new_bind) =
-        printf "Adding compile time variable: %A\n" new_bind
+        //printf "Adding compile time variable: %A\n" new_bind
         // add a compile time variable to the current scope
         match this.Scopes with
         | [] -> failwith "Shouldn't happen, Cannot add compile var to empty context"
@@ -69,7 +69,7 @@ type context with
             {this with Scopes = {head with compile_var_bind = new_bind_map} :: rest}
 
     member this.assignCompileVar (var_name: string) (value: int) (location:int) =
-        printf "Assigning compile time variable: %s with value: %d at location: %d to context %A\n" var_name value location this
+        //printf "Assigning compile time variable: %s with value: %d at location: %d to context %A\n" var_name value location this
         // assign a value to a compile time variable in the current scope
         match this.Scopes with
         | [] -> failwith "Shouldn't happen, Cannot assign compile var to empty context"
@@ -119,15 +119,20 @@ type context with
                         List.mapi (fun i v ->
                             v - (binding.dimension.[i] |> fst)
                         ) dim_index
-                    let strides = 
-                        shape 
-                        |> List.tail 
-                        |> List.scan (fun acc v -> acc * v) 1 // calculate the strides for the dimensions
-                        |> List.rev 
-                        |> List.tail
+                    let strides =
+                        match shape with
+                        | [] -> []
+                        | [single_dim] -> [1] // if there is only one dimension, the stride is 1
+                        | _ ->
+                            shape
+                            |> List.tail
+                            |> List.scan (fun acc v -> acc * v) 1
+                            |> List.rev
+                            |> List.tail
+                    printf "Zeroed dimension index: %A, Strides: %A\n" zeroed_dim_index strides
                     let flat_index = 
                         List.zip zeroed_dim_index strides
-                        |> List.sumBy (fun (index, stride) -> index * stride)
+                        |> List.sumBy (fun (index, stride) -> index * stride) // produce zero if there is no dimension
                     
                     if flat_index < 0 || flat_index >= List.length binding.new_names then
                         // if the index is out of bounds, return None
@@ -384,7 +389,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                         | Identifier var_id ->
                             let var_name = var_id.Name
                             let new_name = scope_prefix + var_name
-                            let dim = [(0,0)]
+                            let dim = []
                             let decl_name_binding = 
                                 {new_names = [new_name]; dimension = dim} // create a new declaration name binding with the new name and dimension
                             let var_bind = (var_name, decl_name_binding)
@@ -458,24 +463,29 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                     | Some expr -> Some (unrollExpression ctx expr)
                     | None -> None
                 match ctx.getCompileVar primary.Primary.Name with
-                | Some value -> 
-                    {
-                            Type = "number";
-                            Location = primary.Location;
-                            Primary = None;
-                            Expression = None;
-                            Number = Some {
-                                Type = "number";
-                                NumberType = "all";
-                                Bits = Some "32"; // default bits for constant expressions
-                                Base = Some "'d"; // default base for constant expressions
-                                AllNumber = Some (value |> string); // convert the value to string
-                                UnsignedNumber = None;
-                                Location = primary.Location;
-                            }
-                        }
+                | Some result-> 
+                    match result with
+                        | Ok value ->
+
+                            {
+                                    Type = "number";
+                                    Location = primary.Location;
+                                    Primary = None;
+                                    Expression = None;
+                                    Number = Some {
+                                        Type = "number";
+                                        NumberType = "all";
+                                        Bits = Some "32"; // default bits for constant expressions
+                                        Base = Some "'d"; // default base for constant expressions
+                                        AllNumber = Some (value |> string); // convert the value to string
+                                        UnsignedNumber = None;
+                                        Location = primary.Location;
+                                    }
+                                }
+                        | Error msg ->
+                            raise (VerilogUnrollerException (msg, primary.Location)) // if the compile time variable is not found, we raise an error
                 | None -> 
-                    match ctx.getDeclName primary.Primary.Name [0] primary.Primary.Location with
+                    match ctx.getDeclName primary.Primary.Name [] primary.Primary.Location with
                     | Some new_name ->
                         let new_primary_identifier = {primary.Primary with Name = new_name}
                         let new_width = 
@@ -507,39 +517,102 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 unary // return the unary as is, no need to unroll
 
         let unrollAssignment (ctx: context) (assignment: AssignmentT) =
-            let lhs = assignment.LHS
+            let lhs: VerilogTypes.AssignmentLHST = assignment.LHS
             let rhs = assignment.RHS
             let unrolled_lhs = 
                 let lhs_primary = lhs.Primary
+                let lhs_primary_dimension = 
+                    match Map.tryFind lhs_primary.Name ctx.Scopes.Head.decl_name_binding with
+                    | Some binding -> binding.dimension
+                    | None -> raise (VerilogUnrollerException (sprintf "Declaration name %s not found in context, not declared" lhs_primary.Name, lhs_primary.Location))
+                let lhs_primary_dimension_size = List.length lhs_primary_dimension
+                let query_index, new_var_sel, new_width = 
+                    if List.length lhs.UnpackArrayDim = lhs_primary_dimension_size then
+                        let query_index = 
+                            lhs.UnpackArrayDim
+                            |> List.map (fun dim_expr ->
+                                let dim_val = evaluateConstantExpression ctx dim_expr
+                                dim_val
+                            )
+                        let new_var_sel =
+                            lhs.VariableBitSelect
+                        let new_width = 
+                            lhs.Width
+                        query_index, new_var_sel, new_width
+                    else if List.length lhs.UnpackArrayDim + 1 = lhs_primary_dimension_size then
+                        if Option.isNone lhs.Width then
+                            raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not match primary dimension, expected width to be defined but it is not for %s" lhs_primary.Name, lhs.Primary.Location))
+                        else
+                            let width_val = evaluateConstantExpression ctx lhs.Width.Value
+                            if width_val <> 1 then
+                                raise (VerilogUnrollerException ((sprintf "Unpacked array dimension slicing does not match primary dimension, expected width to be 1 but it is %d for %s" width_val lhs_primary.Name), lhs.Primary.Location))
+                        if Option.isNone lhs.VariableBitSelect then
+                            raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not match primary dimension, expected variable bit select to be defined but it is not for %A" lhs_primary, lhs.Primary.Location))
+                         
+                        let query_index = 
+                            let new_unpack_array_dim = 
+                                lhs.UnpackArrayDim @ [{
+                                    Type = "constant_expression";
+                                    Location = lhs.Primary.Location;
+                                    ConstantExpression = lhs.VariableBitSelect.Value
+                                }] // add a zero dimension to the unpacked array dimension
+                            new_unpack_array_dim
+                            |> List.map (fun dim_expr ->
+                                let dim_val = evaluateConstantExpression ctx dim_expr
+                                dim_val
+                            )
+                        let new_var_sel =
+                            None
+                        let new_width = 
+                            None
+                        query_index, new_var_sel, new_width
+                    else
+                        // if the unpacked array dimension does not match the primary dimension, we raise an error
+                        raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not that in declaration which was %A" lhs_primary_dimension, lhs.Primary.Location))
+                   
+                
+                printfn "query_index: %A, new_var_sel: %A, new_width: %A" query_index new_var_sel new_width
+                
                 let new_lhs_primary = 
                     printf "Unrolling LHS primary: %A\n" lhs_primary
                     printf "Current context: %A\n" ctx.Scopes.Head.decl_name_binding
-                    match ctx.getDeclName lhs_primary.Name [0] lhs_primary.Location with
+                    match ctx.getDeclName lhs_primary.Name query_index lhs_primary.Location with
                     | Some new_name -> {lhs_primary with Name = new_name} // replace the primary with the new primary from the context
-                    | None -> lhs_primary // if not found, just return the original primary
+                    | None -> lhs_primary // if not found, just return the original primary, this would trigger an error later if the primary is not found
+
+                //These following two fields should not be used anymore with new grammar, but we keep them for compatibility
                 let new_lhs_bitstart = 
                     match lhs.BitsStart with
                     | Some bits_start ->
                         let start_val = evaluateConstantExpression ctx bits_start
-                        Some (makeConstantExpressionWithNum (start_val, bits_start.Location)) // replace the bits start with a constant expression
+                        Some (makeConstantExpressionWithNum (start_val, bits_start.Location))
                     | None -> lhs.BitsStart
                 let new_lhs_bitend =
                     match lhs.BitsEnd with
                     | Some bits_end ->
                         let end_val = evaluateConstantExpression ctx bits_end
-                        Some (makeConstantExpressionWithNum (end_val, bits_end.Location)) // replace the bits end with a constant expression
+                        Some (makeConstantExpressionWithNum (end_val, bits_end.Location))
                     | None -> lhs.BitsEnd
+
                 let new_lhs_variable_bitselect =
-                    match lhs.VariableBitSelect with
+                    match new_var_sel with
                     | Some var_bitselect ->
                         Some (unrollExpression ctx var_bitselect) // unroll the variable bit select expression
-                    | None -> lhs.VariableBitSelect
+                    | None -> None
+                let new_width =
+                    match new_width with
+                    | Some width ->
+                        let width_val = evaluateConstantExpression ctx width
+                        Some (makeConstantExpressionWithNum (width_val, width.Location)) // replace the width with a constant expression
+                    | None -> None // no width, so we just return None
                 {lhs with
                     Primary = new_lhs_primary
                     BitsStart = new_lhs_bitstart
                     BitsEnd = new_lhs_bitend
                     VariableBitSelect = new_lhs_variable_bitselect
+                    Width = new_width
                 }
+            printfn "Unrolling assignment LHS: %A" unrolled_lhs
             let unrolled_rhs = unrollExpression ctx rhs
             {assignment with LHS = unrolled_lhs; RHS = unrolled_rhs} // replace the assignment with the unrolled
 
@@ -599,7 +672,9 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
             | "parameter_declaration" ->
                 let new_ctx, new_decl = unrollParamDecl ctx item.ParamDecl.Value
                 // parameter declaration determines the context, but itself is not part of non
-                new_ctx, [item]//{item with ItemType = "parameter_declaration"; ParamDecl = Some new_decl} // replace the item with the unrolled declaration
+                new_ctx, [item]
+                // returning the item as is, so that it can be processed to create default param bindings for the sheet
+                // this can be used later when more issie parameter is available and less unrolling is needed at this stage
             | "generate_region" ->
                 let new_ctx = ctx.pushScope ()
                 let region_items = item.GenerateRegion.Value
@@ -638,7 +713,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 let new_statement = unrollStatement ctx statement
                 let new_always_construct = {always_construct with Statement = new_statement} // replace the always construct with the unrolled statement
                 let new_item = {item with ItemType = "always_construct"; AlwaysConstruct = Some new_always_construct} // replace the item with the unrolled always construct
-                ctx, [new_item] // return the item as is, no need to unroll
+                ctx, [new_item]
             | "module_instantiation" -> //TODO: test this
                 let module_instantiation = item.ModuleInstantiation.Value
                 let identifier = module_instantiation.Identifier
@@ -654,7 +729,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                     |> Array.map (fun conn ->
                         let conn_primary = conn.Primary
                         let new_identifier = 
-                            match ctx.getDeclName conn_primary.Primary.Name [0] conn_primary.Primary.Location with
+                            match ctx.getDeclName conn_primary.Primary.Name [] conn_primary.Primary.Location with
                             | Some new_name -> {conn_primary.Primary with Name = new_name} // replace the primary with the new primary from the context
                             | None -> conn_primary.Primary // if not found, just return the original primary
                         let new_width =

@@ -9,6 +9,13 @@ open VerilogAST
 
 open NumberHelpers
 
+open System.Text.RegularExpressions
+
+let extractIdentifier (s: string) : string =
+    let m = Regex.Match(s, @"^([a-zA-Z_]\w*)\s*\[.*\]$")
+    if m.Success then m.Groups.[1].Value
+    else s // fallback: return original if not matched
+
 /// Helper function to create an ErrorInfo-type Error Message 
 /// given the location, the variable name, and the message
 let createErrorMessage 
@@ -597,6 +604,7 @@ let getRHSBits portSizeMap paramBindings expression=
     getExprBits expression
 
 let getLHSWidth (assign:AssignmentT) (varSizeMap: Map<string, int>) paramBindings=
+    printfn "getLHSWidth: %A" assign.LHS
     match assign.LHS.BitsStart, assign.LHS.BitsEnd, assign.LHS.VariableBitSelect, assign.LHS.Width with
     
     | Some s, Some e, _, _ -> 

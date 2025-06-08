@@ -626,10 +626,10 @@ let checkWiresAndAssignments
             match List.tryFind (fun wire -> wire = lhs.Primary.Name) wiresDeclared  with
             | Some _ -> errorList
             | _ ->
-                let message = sprintf "Variable '%s' is not declared as an output port" lhs.Primary.Name
+                let message = sprintf "Variable '%s' is not declared as an output port or variable" lhs.Primary.Name
                 let extraMessagesMain = 
                     [|
-                        {Text=(sprintf "Variable '%s' is not declared as an output port" lhs.Primary.Name);Copy=false;Replace=NoReplace}
+                        {Text=(sprintf "Variable '%s' is not declared as an output port or variable" lhs.Primary.Name);Copy=false;Replace=NoReplace}
                     |]
 
                 let possibleAddition =
@@ -760,12 +760,12 @@ let checkWiresAndAssignments
                 // printf "Checking LHS of assignment %A\n" assignment.LHS
                 match assignment.LHS.VariableBitSelect with
                 | Some expr -> 
-                    printf "%A" (checkNamesOnRHSOfAssignment expr currentInputWireList errlst)
+                    //printf "%A" (checkNamesOnRHSOfAssignment expr currentInputWireList errlst)
                     checkNamesOnRHSOfAssignment expr currentInputWireList errlst
                 | _ -> errlst)
             |> checkSizesOnRHSOfAssignment assignment currentInputWireSizeMap
             |> (fun errlst -> 
-                printf "error list %A\n" errlst
+                //printf "error list %A\n" errlst
                 match assignment.LHS.VariableBitSelect with
                 | Some expr -> checkExpr linesLocations paramBindings currentInputWireSizeMap errlst expr
                 | _ -> errlst)
@@ -1192,6 +1192,7 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
                                 Map.add variable.Name (start_value-end_value+1) map'
                         )
                 )
+                printfn "Wire Size Map: %A" wireSizeMap
 
                 parameterParseError
                 |> nameCheck ast linesLocations origin project //name is valid (not used by another sheet/component)
@@ -1212,7 +1213,7 @@ let getSemanticErrors ast linesLocations (origin:CodeEditorOpen) (project:Projec
                 |> checkClk ast linesLocations portMap
                 |> checkClkNames ast linesLocations portMap portLocationMap portSizeMap
                 |> cycleCheck ast linesLocations portSizeMap wireSizeMap paramBindings
-                |> checkVariablesUsed ast linesLocations portSizeMap wireSizeMap paramBindings
+                |> checkVariablesUsed ast linesLocations portSizeMap wireSizeMap wireLocationMap paramBindings
                 |> checkAlwaysCombRHS ast linesLocations portSizeMap wireSizeMap paramBindings
                 |> checkAssignmentWidths ast linesLocations portSizeMap wireSizeMap paramBindings
                 |> checkModuleInstantiations ast linesLocations portSizeMap wireSizeMap project portMap paramBindings

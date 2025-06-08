@@ -609,6 +609,7 @@ let checkVariablesUsed
     (linesLocations: int list)
     (portSizeMap: Map<string,int>)
     (wireSizeMap: Map<string, int>)
+    (wireLocationMap: Map<string, int>)
     (paramBindings: ParameterTypes.ParamBindings)
     (errorList: ErrorInfo list) =
 
@@ -660,14 +661,29 @@ let checkVariablesUsed
         |> List.fold checkVariable []
     match varsNotAssigned with
     | [] -> errorList
-    | _ ->        
-        let location = ast.Module.EndLocation
+    | _ -> 
+        //printfn "Variables not assigned: %A" varsNotAssigned
+        //printfn "Wire location map: %A" wireLocationMap
+        let extra_errors =
+            varsNotAssigned
+            |> List.collect (fun var -> 
+                let nosuff_var = extractIdentifier var
+                match Map.tryFind nosuff_var wireLocationMap with
+                | Some location -> 
+                    let extraMessages=                    
+                        [|
+                            {Text=sprintf "Variable %s is not assigned to in the module, please make sure to assign it." var; Copy=false;Replace=NoReplace};
+                        |]
+                    createErrorMessage linesLocations location (sprintf "Variable %s is not assigned" var) extraMessages var
+                | None -> [])
+       
+        let location = ast.Module.EndLocation //TODO: this create a list of errors at the location where the variables are declared
         let extraMessages=                    
             [|
-                {Text=sprintf "The following variables have not been assigned %A" varsNotAssigned; Copy=false;Replace=NoReplace};
+                {Text=sprintf "End of module reached but the following variables contain indexes that have not been assigned %A" varsNotAssigned; Copy=false;Replace=NoReplace};
             |]
-        let message = sprintf "The following variables have not been assigned %A" varsNotAssigned
-        errorList @ createErrorMessage linesLocations location message extraMessages "endmodule"
+        let message = sprintf "End of module reached but the following variables contain indexes that have not been assigned %A" varsNotAssigned
+        errorList @ extra_errors//createErrorMessage linesLocations location message extraMessages "endmodule"
 
 /// Helper function for checking if any variable or port being written to after it is read in always_comb blocks.
 let rec getVariablesWrittenAfterRead wireAndPortSizeMap paramBindings linesLocations (rhsVars, errors) node =

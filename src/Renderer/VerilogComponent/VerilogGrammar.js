@@ -246,7 +246,7 @@ var grammar = {
             };
             return {lsb: lsb_expression, width: width_constant_expression};
         } },
-    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER"], "postprocess": function(d) {return {Type: "l_value", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0]};}},
+    {"name": "NET_LVALUE", "symbols": ["IDENTIFIER"], "postprocess": function(d) {return {Type: "l_value", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], UnpackArrayDim: []};}},
     {"name": "NET_LVALUE$ebnf$1", "symbols": []},
     {"name": "NET_LVALUE$ebnf$1$subexpression$1", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return d[1]}},
     {"name": "NET_LVALUE$ebnf$1", "symbols": ["NET_LVALUE$ebnf$1", "NET_LVALUE$ebnf$1$subexpression$1"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},

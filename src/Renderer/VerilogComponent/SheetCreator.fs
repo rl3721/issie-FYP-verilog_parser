@@ -424,7 +424,7 @@ let buildExpressionComponent (rhs:ExpressionCompilable) width =
 
 
 /////// CIRCUIT CREATION ////////
-/// 
+
 
 // let createParameterCircuit (name) paramBindings= 
 //     printf "Creating parameter circuit for %A" name
@@ -478,6 +478,7 @@ let createNumberCircuit (number:NumberT) =
         |"'h" -> "0x"+no
         |_ -> no
     let constValue =
+        printfn "Creating number circuit for %A with value %s with width %d" number text width
         match NumberHelpers.strToIntCheckWidth width text with
         |Ok n -> n
         |Error _ -> failwithf "Shouldn't happen!"
@@ -1285,7 +1286,7 @@ let compileModule
             | Some expr, Some w ->
 
                 let w_value = ConstantExpressionToInt w paramBindings
-                
+
                 let outPort = assign.LHS.Primary.Name
                 let outWidth = Map.find outPort varSizeMap
                 let rhsCircuit = mainExpressionCircuitBuilder assign.RHS varToCompMap varSizeMap paramBindings outWidth

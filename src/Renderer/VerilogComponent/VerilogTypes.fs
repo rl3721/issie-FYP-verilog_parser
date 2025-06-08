@@ -61,7 +61,7 @@ type AssignmentLHST = {Type: string;
                         BitsStart: ConstantExpressionT option; 
                         BitsEnd: ConstantExpressionT option; 
                         Primary: IdentifierT; 
-                        UnpackArrayDim: (ConstantExpressionT list) option; 
+                        UnpackArrayDim: (ConstantExpressionT list); //always present, even if empty
                         VariableBitSelect: ExpressionT option; 
                         Width: ConstantExpressionT option}
 

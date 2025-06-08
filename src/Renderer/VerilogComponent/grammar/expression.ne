@@ -221,7 +221,7 @@ RANGE_EXPRESSION
 #### 8.5 Expression left-side values ####
 
 NET_LVALUE
-    -> IDENTIFIER {%function(d) {return {Type: "l_value", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0]};} %}
+    -> IDENTIFIER {%function(d) {return {Type: "l_value", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], UnpackArrayDim: []};} %}
     | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1]} %}):* %lbracket RANGE_EXPRESSION %rbracket {% 
         function(d) {
             return {Type: "l_value", PrimaryType: "identifier_bit_variable", Primary: d[0], VariableBitSelect: d[3].lsb, Width: d[3].width, 
