@@ -68,6 +68,7 @@ let checkProceduralAssignments
 
 /// Checks if a variable is driven by multiple always blocks or continuous assignments
 /// Could be improved if it printed out the variables / marked the error at the location of the variables
+/// TODO: THIS IS WRONG, you should be able to assign different slice of packed vectors
 let checkVariablesDrivenSimultaneously     
     (ast:VerilogInput) 
     (linesLocations: int list)

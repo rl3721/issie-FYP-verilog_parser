@@ -101,18 +101,21 @@ UNARY
 
 PRIMARY # TODO: refactor this part such it accepts constant expressions
     -> IDENTIFIER 
-        {%function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], Location: d[0].Location};} %}
-    | IDENTIFIER %lbracket RANGE_EXPRESSION %rbracket 
-        {% function(d) {
-            return {
-                Type: "primary",
-                PrimaryType: "identifier_bit_variable",
-                Primary: d[0],
-                Expression: d[2].lsb,
-                Width:d[2].width,
-                Location:d[1].offset
-            };
-        } %}
+        {%function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], Location: d[0].Location, Dimension: []};} %}
+    | IDENTIFIER (%lbracket CONSTANT_EXPRESSION %rbracket {% function(d) {return d[1];} %}):* 
+            %lbracket RANGE_EXPRESSION %rbracket 
+                {% function(d) {
+                    return {
+                        Type: "primary",
+                        PrimaryType: "identifier_bit_variable",
+                        Primary: d[0],
+                        Expression: d[3].lsb,
+                        VariableBitSelect: d[3].lsb,
+                        Dimension: d[1],
+                        Width:d[3].width,
+                        Location:d[2].offset
+                    };
+                } %}
         
     # | IDENTIFIER _ %lbracket _ UNSIGNED_NUMBER _ %rbracket 
     #     {%function(d) {return {Type: "primary", PrimaryType: "identifier_bit", BitsStart: d[4], BitsEnd: d[4], Primary: d[0], Location: d[0].Location};} %}

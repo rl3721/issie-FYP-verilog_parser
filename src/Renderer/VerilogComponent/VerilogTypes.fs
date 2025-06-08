@@ -44,7 +44,7 @@ and ConstantExpressionT = {Type: string; ConstantExpression: ExpressionT; Locati
 
 
 
-and PrimaryT = {Type: string; PrimaryType: string; BitsStart: ConstantExpressionT option; BitsEnd: ConstantExpressionT option; Primary: IdentifierT; Width: ConstantExpressionT option; Location: int}
+and PrimaryT = {Type: string; PrimaryType: string; BitsStart: ConstantExpressionT option; BitsEnd: ConstantExpressionT option; Primary: IdentifierT; Width: ConstantExpressionT option; VariableBitSelect: ExpressionT option; Dimension: ConstantExpressionT list;Location: int}
 
 
 and ExpressionT = {Type: string; Operator: string option; Head: ExpressionT option; Tail: ExpressionT option; Unary: UnaryT option; Location: int}

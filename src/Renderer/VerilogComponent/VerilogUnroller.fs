@@ -36,6 +36,8 @@ type scope = {
 type context = {
     used_scope_names: int //record the used scope names, does not reset when popping scopes
     Scopes: scope list // the scopes in the context, the first scope is the global scope
+    input_list: string list // the input list, used for generating regions
+    output_list: string list // the output list, used for generating regions
 }
 type context with
     member this.pushScope () =
@@ -76,13 +78,13 @@ type context with
         | head :: rest ->
             if Map.containsKey var_name head.compile_var_bind then
                 // if the variable already exists, we override its value
-                printf "Overriding compile time variable: %s with value: %d\n" var_name value
+                let old_bind_list = this.Scopes.Head.compile_var_bind |> Map.toList
+                let new_bind_map = 
+                    Map.ofList (old_bind_list @ [(var_name, Ok value)]) // add the new binding, overriding any existing one
+                {this with Scopes = {head with compile_var_bind = new_bind_map} :: rest}
             else
                 raise (VerilogUnrollerException (sprintf "using genvar %s that is undefined" var_name, location))
-            let old_bind_list = this.Scopes.Head.compile_var_bind |> Map.toList
-            let new_bind_map = 
-                Map.ofList (old_bind_list @ [(var_name, Ok value)]) // add the new binding, overriding any existing one
-            {this with Scopes = {head with compile_var_bind = new_bind_map} :: rest}
+            
     member this.getCompileVar (var_name: string) =
         // get a compile time variable from the current scope
         match this.Scopes with
@@ -97,51 +99,66 @@ type context with
             let old_bind_list = this.Scopes.Head.decl_name_binding |> Map.toList
             let new_bind_map = Map.ofList (old_bind_list @ new_bind)
             let new_ctx = {this with Scopes = {head with decl_name_binding = new_bind_map} :: rest}
-            printf "Adding decl name binding: %A\n" new_ctx
             new_ctx
 
+    member this.addInput (input_name: string) =
+        // add an input to the input list
+        let new_input_list = input_name :: this.input_list
+        {this with input_list = new_input_list}
+    member this.addOutput (output_name: string) =
+        // add an output to the output list
+        let new_output_list = output_name :: this.output_list
+        {this with output_list = new_output_list}
+
     member this.getDeclName (name: string) (dim_index: int list) (location:int) =
-        // get a declaration name binding from the current scope
-        match this.Scopes with
-        | [] -> failwith "Shouldn't happen, Cannot get decl name from empty context"
-        | head :: _ ->
-            Map.tryFind name head.decl_name_binding
-            |> Option.bind (fun binding ->
-                // check if the dimension index is valid
-                if dim_index.Length <> List.length binding.dimension then
-                    raise (VerilogUnrollerException (sprintf "Dimension index %A does not match declaration dimension %A" dim_index binding.dimension, location))
-                else
-      
-                    let shape = 
-                        binding.dimension
-                        |> List.map (fun (start, end_) -> end_ - start + 1)
-                    let zeroed_dim_index =
-                        List.mapi (fun i v ->
-                            v - (binding.dimension.[i] |> fst)
-                        ) dim_index
-                    let strides =
-                        match shape with
-                        | [] -> []
-                        | [single_dim] -> [1] // if there is only one dimension, the stride is 1
-                        | _ ->
-                            shape
-                            |> List.tail
-                            |> List.scan (fun acc v -> acc * v) 1
-                            |> List.rev
-                            |> List.tail
-                    printf "Zeroed dimension index: %A, Strides: %A\n" zeroed_dim_index strides
-                    let flat_index = 
-                        List.zip zeroed_dim_index strides
-                        |> List.sumBy (fun (index, stride) -> index * stride) // produce zero if there is no dimension
-                    
-                    if flat_index < 0 || flat_index >= List.length binding.new_names then
-                        // if the index is out of bounds, return None
-                        None
+        printf "Getting declaration name: %s with dimension index: %A from context %A\n" name dim_index this
+        if List.contains name this.input_list then
+            // if the name is in the input list, we return it as is
+            Some name
+        elif List.contains name this.output_list then
+            // if the name is in the output list, we return it as is
+            Some name
+        else
+            // otherwise, we try to find the declaration name binding in the current scope
+            // printf "Getting declaration name: %s with dimension index: %A from context %A\n" name dim_index this
+            // get a declaration name binding from the current scope
+            match this.Scopes with
+            | [] -> failwith "Shouldn't happen, Cannot get decl name from empty context"
+            | head :: _ ->
+                Map.tryFind name head.decl_name_binding
+                |> Option.bind (fun binding ->
+                    // check if the dimension index is valid
+                    if dim_index.Length <> List.length binding.dimension then
+                        raise (VerilogUnrollerException (sprintf "Dimension index %A does not match declaration dimension %A" dim_index binding.dimension, location))
                     else
-                        // if the index is valid, return the name at that index
-                        Some (binding.new_names.[flat_index])
-                    
-            )
+        
+                        let shape = 
+                            binding.dimension
+                            |> List.map (fun (start, end_) -> end_ - start + 1)
+                        let zeroed_dim_index =
+                            List.mapi (fun i v ->
+                                v - (binding.dimension.[i] |> fst)
+                            ) dim_index
+                        let strides =
+                            match shape with
+                            | [] -> []
+                            | [single_dim] -> [1] // if there is only one dimension, the stride is 1
+                            | _ ->
+                                shape
+                                |> List.tail
+                                |> List.scan (fun acc v -> acc * v) 1
+                                |> List.rev
+                        let flat_index = 
+                            List.zip zeroed_dim_index strides
+                            |> List.sumBy (fun (index, stride) -> index * stride) // produce zero if there is no dimension
+                        if flat_index < 0 || flat_index >= List.length binding.new_names then
+                            // if the index is out of bounds, return None
+                            None
+                        else
+                            // if the index is valid, return the name at that index
+                            Some (binding.new_names.[flat_index])
+                        
+                )
                 
             
 
@@ -204,7 +221,6 @@ let evaluateConstantExpression (ctx: context) (expr: ConstantExpressionT)=
                 // check if the identifier is a compile time variable
                 match ctx.getCompileVar primary.Primary.Name with
                 | Some r -> 
-                    printf "Context %A" ctx
                     match r with
                     | Ok value -> value // return the value of the compile time variable
                     | Error msg -> raise (VerilogUnrollerException (msg, primary.Location))
@@ -225,6 +241,7 @@ let evaluateConstantExpression (ctx: context) (expr: ConstantExpressionT)=
                 number.UnsignedNumber.Value |> System.Convert.ToInt32
             | _ -> raise (UnsupportedConstantExpression (sprintf "Unsupported number type %s" number.NumberType, number.Location))
     evaluateExpression (ConstantExpression expr)
+
 
 let makeConstantExpressionWithNum (num: int, location: int) =
      {
@@ -254,7 +271,16 @@ let makeConstantExpressionWithNum (num: int, location: int) =
             }
         }
     }
-let generateDimPrefix location dims  =
+
+let tryEvaluateExpressionasInt (ctx: context) (expr: ExpressionT) =
+    try
+        let const_expr = {Type = "constant_expression"; Location = expr.Location; ConstantExpression = expr}
+        let value = (evaluateConstantExpression ctx const_expr)
+        Some value
+    with
+    | UnsupportedConstantExpression (msg, location) ->
+        None
+let generateDimSuffix location dims  =
     List.foldBack
         (fun (lo, hi) acc ->
             if lo > hi then
@@ -272,7 +298,7 @@ let generateDimPrefix location dims  =
 // printfn "Generated suffixes: %A" (generateSuffixes [(0, 4); (0, 5)])
 
 let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
-    printf "Unrolling Verilog module: %s\n" verilog.Module.ModuleName.Name
+    // printf "Unrolling Verilog module: %s\n" verilog.Module.ModuleName.Name
     try 
 
         let item_list = Array.toList (verilog.Module.ModuleItems.ItemList)
@@ -287,7 +313,9 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 compile_var_bind = Map.empty // global scope starts with no compile time variables
                 decl_name_binding = Map.empty // global scope starts with no declaration name bindings
             }];
-            used_scope_names = 0 // global scope starts with 0
+            used_scope_names = 0; // global scope starts with 0
+            input_list = [];
+            output_list = [];
         }
 
         let unrollParamDecl (ctx: context) (paramDecl: ParameterDeclarationT) =
@@ -353,9 +381,9 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                                         let end_val = evaluateConstantExpression ctx end_
                                         (start_val, end_val)
                                     )
-                                    |> generateDimPrefix var_dim.Location// generate the dimension prefix based on the dimension
-                                    |> List.map (fun dp ->
-                                        scope_prefix + dp + "_" + var_dim.Identifier.Name
+                                    |> generateDimSuffix var_dim.Location// generate the dimension prefix based on the dimension
+                                    |> List.map (fun ds ->
+                                        scope_prefix + "_" + var_dim.Identifier.Name + ds
                                     )
                                 dim_prefix
                         let new_variable =
@@ -401,10 +429,12 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                                 |> List.map (fun (start, end_) ->
                                     let start_val = evaluateConstantExpression ctx start
                                     let end_val = evaluateConstantExpression ctx end_
-                                    generateDimPrefix var_dim.Location [(start_val, end_val)]
-                                    |> List.map (fun dp -> scope_prefix + dp + "_" + var_name)
+                                    start_val, end_val
                                 )
-                                |> List.concat // flatten the list of lists
+                                |> generateDimSuffix var_dim.Location // generate the dimension suffixes based on the dimension
+                                |> List.map (fun ds ->
+                                        scope_prefix + "_" + var_dim.Identifier.Name + ds
+                                    )
                             let dim = 
                                 var_dim.Dimension
                                 |> List.map (fun (start, end_) ->
@@ -457,11 +487,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 {unary with Expression = Some new_expr}
             | "primary" -> 
                 let primary = unary.Primary.Value
-                let expression = unary.Expression
-                let new_expression =
-                    match expression with
-                    | Some expr -> Some (unrollExpression ctx expr)
-                    | None -> None
+                let unaryExpression = unary.Expression
                 match ctx.getCompileVar primary.Primary.Name with
                 | Some result-> 
                     match result with
@@ -485,35 +511,100 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                         | Error msg ->
                             raise (VerilogUnrollerException (msg, primary.Location)) // if the compile time variable is not found, we raise an error
                 | None -> 
-                    match ctx.getDeclName primary.Primary.Name [] primary.Primary.Location with
-                    | Some new_name ->
-                        let new_primary_identifier = {primary.Primary with Name = new_name}
-                        let new_width = 
-                            match primary.Width with
-                            | Some width ->
-                                let width_val = evaluateConstantExpression ctx width
-                                Some (makeConstantExpressionWithNum (width_val, width.Location)) // replace the width with a constant expression
-                            | None -> None // no width, so we just return None
-                        let new_start_bit =
-                            match primary.BitsStart with
-                            | Some bits_start ->
-                                let start_val = evaluateConstantExpression ctx bits_start
-                                Some (makeConstantExpressionWithNum (start_val, bits_start.Location)) // replace the bits start with a constant expression
-                            | None -> None // no bits start, so we just return None
-                        let new_end_bit =
-                            match primary.BitsEnd with
-                            | Some bits_end ->
-                                let end_val = evaluateConstantExpression ctx bits_end
-                                Some (makeConstantExpressionWithNum (end_val, bits_end.Location)) // replace the bits end with a constant expression
-                            | None -> None // no bits end, so we just return None
-                        let new_primary = {primary with Primary = new_primary_identifier; Width = new_width; BitsStart = new_start_bit; BitsEnd = new_end_bit}
-                        {unary with Primary = Some new_primary; Expression = new_expression} // replace the unary with the new unary
-                    | None ->
-                        // if the primary is not a compile time variable or a declaration name, we just return the unary as is
-                        unary
+                    match List.contains primary.Primary.Name ctx.input_list, 
+                        List.contains primary.Primary.Name ctx.output_list with
+                    | true, _ ->
+                        // if the primary is an input, we just return the unary as is
+                        unary // return the unary as is, no need to unroll
+                    | _, true ->
+                        // if the primary is an output, we just return the unary as is
+                        unary // return the unary as is, no need to unroll
+                    | _ ->
+                        let query_index, new_var_sel, new_width = 
+                            let primary_dimension = 
+                                match Map.tryFind primary.Primary.Name ctx.Scopes.Head.decl_name_binding with
+                                | Some binding -> binding.dimension
+                                | None -> raise (VerilogUnrollerException (sprintf "Declaration name '%s' not found in context, not declared" primary.Primary.Name, primary.Location))
+                            let primary_dimension_size = List.length primary_dimension
+
+                            if List.length primary.Dimension = primary_dimension_size then
+
+                                let query_index = 
+                                    primary.Dimension
+                                    |> List.map (fun dim_expr ->
+                                        let dim_val = evaluateConstantExpression ctx dim_expr
+                                        dim_val
+                                    )
+                                let new_var_sel =
+                                    unaryExpression
+                                let new_width = 
+                                    primary.Width
+                                query_index, new_var_sel, new_width
+                            else if List.length primary.Dimension + 1 = primary_dimension_size then
+
+                                if Option.isNone primary.Width then
+                                    raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not match primary dimension, expected width to be defined but it is not for %s" primary.Primary.Name, primary.Location))
+                                else
+                                    let width_val = evaluateConstantExpression ctx primary.Width.Value
+                                    if width_val <> 1 then
+                                        raise (VerilogUnrollerException ((sprintf "Unpacked array dimension slicing does not match primary dimension, expected width to be 1 but it is %d for %s" width_val primary.Primary.Name), primary.Location))
+                                if Option.isNone unaryExpression then
+                                    raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not match primary dimension, expected variable bit select to be defined but it is not for %s" primary.Primary.Name, primary.Location))
+
+                                let query_index = 
+                                    let new_unpack_array_dim = 
+                                        primary.Dimension @ [{
+                                            Type = "constant_expression";
+                                            Location = primary.Location;
+                                            ConstantExpression = unaryExpression.Value
+                                        }] // add a zero dimension to the unpacked array dimension
+                                    new_unpack_array_dim
+                                    |> List.map (fun dim_expr ->
+                                        let dim_val = evaluateConstantExpression ctx dim_expr
+                                        dim_val
+                                    )
+                                let new_var_sel =
+                                    None
+                                let new_width = 
+                                    None
+                                query_index, new_var_sel, new_width
+                            else
+                                // if the unpacked array dimension does not match the primary dimension, we raise an error
+                                raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not that in declaration which was %A" primary_dimension, primary.Location))
+                    
+                        match ctx.getDeclName primary.Primary.Name query_index primary.Location with
+                        | Some new_name ->
+                            let new_primary_identifier = {primary.Primary with Name = new_name}
+                            
+                            let new_start_bit = 
+                                match new_var_sel, new_width with
+                                | Some var_bitselect, Some width ->
+                                    let start_val = tryEvaluateExpressionasInt ctx var_bitselect
+                                    match start_val with
+                                    | Some v ->
+                                        let width_val = evaluateConstantExpression ctx width
+                                        let end_val = v + width_val - 1 // calculate the end value based on the start value and width
+                                        Some (makeConstantExpressionWithNum (end_val, var_bitselect.Location))
+                                    | None -> None
+                                
+                                | _ -> None
+                            let new_end_bit =
+                                match new_var_sel, new_width with
+                                | Some var_bitselect, Some width ->
+                                    let start_val = tryEvaluateExpressionasInt ctx var_bitselect
+                                    match start_val with
+                                    | Some v ->
+                                        Some (makeConstantExpressionWithNum (v, var_bitselect.Location))
+                                    | None -> None
+                                | _ -> None
+                            let new_primary = {primary with Primary = new_primary_identifier; Width = new_width; BitsStart = new_start_bit; BitsEnd = new_end_bit}
+                            {unary with Primary = Some new_primary; Expression = new_var_sel} // replace the unary with the new unary
+                        | None ->
+                            // if the primary is not a compile time variable or a declaration name, we just return the unary as is
+                            // this would probably trigger an error later if the primary is not found
+                            unary
             | _ -> 
                 // for all other unary types, we just return the unary as is
-                printf "Unrolling unary: %s\n" unary.Type
                 unary // return the unary as is, no need to unroll
 
         let unrollAssignment (ctx: context) (assignment: AssignmentT) =
@@ -521,98 +612,112 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
             let rhs = assignment.RHS
             let unrolled_lhs = 
                 let lhs_primary = lhs.Primary
-                let lhs_primary_dimension = 
-                    match Map.tryFind lhs_primary.Name ctx.Scopes.Head.decl_name_binding with
-                    | Some binding -> binding.dimension
-                    | None -> raise (VerilogUnrollerException (sprintf "Declaration name %s not found in context, not declared" lhs_primary.Name, lhs_primary.Location))
-                let lhs_primary_dimension_size = List.length lhs_primary_dimension
-                let query_index, new_var_sel, new_width = 
-                    if List.length lhs.UnpackArrayDim = lhs_primary_dimension_size then
-                        let query_index = 
-                            lhs.UnpackArrayDim
-                            |> List.map (fun dim_expr ->
-                                let dim_val = evaluateConstantExpression ctx dim_expr
-                                dim_val
-                            )
-                        let new_var_sel =
-                            lhs.VariableBitSelect
-                        let new_width = 
-                            lhs.Width
-                        query_index, new_var_sel, new_width
-                    else if List.length lhs.UnpackArrayDim + 1 = lhs_primary_dimension_size then
-                        if Option.isNone lhs.Width then
-                            raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not match primary dimension, expected width to be defined but it is not for %s" lhs_primary.Name, lhs.Primary.Location))
+                match List.contains lhs_primary.Name ctx.input_list,
+                      List.contains lhs_primary.Name ctx.output_list 
+                with
+                | true, _ ->
+                    // if the primary is an input, we just return the lhs as is
+                    lhs // return the lhs as is, no need to unroll
+                | _, true ->
+                    // if the primary is an output, we just return the lhs as is
+                    lhs // return the lhs as is, no need to unroll
+                | _ ->
+                    let lhs_primary_dimension = 
+                        match Map.tryFind lhs_primary.Name ctx.Scopes.Head.decl_name_binding with
+                        | Some binding -> binding.dimension
+                        | None -> raise (VerilogUnrollerException (sprintf "Declaration name '%s' not found in context, not declared" lhs_primary.Name, lhs_primary.Location))
+                    let lhs_primary_dimension_size = List.length lhs_primary_dimension
+                    let query_index, new_var_sel, new_width = 
+                        if List.length lhs.UnpackArrayDim = lhs_primary_dimension_size then
+                            let query_index = 
+                                lhs.UnpackArrayDim
+                                |> List.map (fun dim_expr ->
+                                    let dim_val = evaluateConstantExpression ctx dim_expr
+                                    dim_val
+                                )
+                            let new_var_sel =
+                                lhs.VariableBitSelect
+                            let new_width = 
+                                lhs.Width
+                            query_index, new_var_sel, new_width
+                        else if List.length lhs.UnpackArrayDim + 1 = lhs_primary_dimension_size then
+                            if Option.isNone lhs.Width then
+                                raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not match primary dimension, expected width to be defined but it is not for %s" lhs_primary.Name, lhs.Primary.Location))
+                            else
+                                let width_val = evaluateConstantExpression ctx lhs.Width.Value
+                                if width_val <> 1 then
+                                    raise (VerilogUnrollerException ((sprintf "Unpacked array dimension slicing does not match primary dimension, expected width to be 1 but it is %d for %s" width_val lhs_primary.Name), lhs.Primary.Location))
+                            if Option.isNone lhs.VariableBitSelect then
+                                raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not match primary dimension, expected variable bit select to be defined but it is not for %s" lhs_primary.Name, lhs.Primary.Location))
+
+                            let query_index = 
+                                let new_unpack_array_dim = 
+                                    lhs.UnpackArrayDim @ [{
+                                        Type = "constant_expression";
+                                        Location = lhs.Primary.Location;
+                                        ConstantExpression = lhs.VariableBitSelect.Value
+                                    }] // add a zero dimension to the unpacked array dimension
+                                new_unpack_array_dim
+                                |> List.map (fun dim_expr ->
+                                    let dim_val = evaluateConstantExpression ctx dim_expr
+                                    dim_val
+                                )
+                            let new_var_sel =
+                                None
+                            let new_width = 
+                                None
+                            query_index, new_var_sel, new_width
                         else
-                            let width_val = evaluateConstantExpression ctx lhs.Width.Value
-                            if width_val <> 1 then
-                                raise (VerilogUnrollerException ((sprintf "Unpacked array dimension slicing does not match primary dimension, expected width to be 1 but it is %d for %s" width_val lhs_primary.Name), lhs.Primary.Location))
-                        if Option.isNone lhs.VariableBitSelect then
-                            raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not match primary dimension, expected variable bit select to be defined but it is not for %A" lhs_primary, lhs.Primary.Location))
-                         
-                        let query_index = 
-                            let new_unpack_array_dim = 
-                                lhs.UnpackArrayDim @ [{
-                                    Type = "constant_expression";
-                                    Location = lhs.Primary.Location;
-                                    ConstantExpression = lhs.VariableBitSelect.Value
-                                }] // add a zero dimension to the unpacked array dimension
-                            new_unpack_array_dim
-                            |> List.map (fun dim_expr ->
-                                let dim_val = evaluateConstantExpression ctx dim_expr
-                                dim_val
-                            )
-                        let new_var_sel =
-                            None
-                        let new_width = 
-                            None
-                        query_index, new_var_sel, new_width
-                    else
-                        // if the unpacked array dimension does not match the primary dimension, we raise an error
-                        raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not that in declaration which was %A" lhs_primary_dimension, lhs.Primary.Location))
-                   
-                
-                printfn "query_index: %A, new_var_sel: %A, new_width: %A" query_index new_var_sel new_width
-                
-                let new_lhs_primary = 
-                    printf "Unrolling LHS primary: %A\n" lhs_primary
-                    printf "Current context: %A\n" ctx.Scopes.Head.decl_name_binding
-                    match ctx.getDeclName lhs_primary.Name query_index lhs_primary.Location with
-                    | Some new_name -> {lhs_primary with Name = new_name} // replace the primary with the new primary from the context
-                    | None -> lhs_primary // if not found, just return the original primary, this would trigger an error later if the primary is not found
+                            // if the unpacked array dimension does not match the primary dimension, we raise an error
+                            raise (VerilogUnrollerException (sprintf "Unpacked array dimension slicing does not that in declaration which was %A" lhs_primary_dimension, lhs.Primary.Location))
+                    
+                    
+                    let new_lhs_primary = 
+                        match ctx.getDeclName lhs_primary.Name query_index lhs_primary.Location with
+                        | Some new_name -> {lhs_primary with Name = new_name} // replace the primary with the new primary from the context
+                        | None -> lhs_primary // if not found, just return the original primary, this would trigger an error later if the primary is not found
 
-                //These following two fields should not be used anymore with new grammar, but we keep them for compatibility
-                let new_lhs_bitstart = 
-                    match lhs.BitsStart with
-                    | Some bits_start ->
-                        let start_val = evaluateConstantExpression ctx bits_start
-                        Some (makeConstantExpressionWithNum (start_val, bits_start.Location))
-                    | None -> lhs.BitsStart
-                let new_lhs_bitend =
-                    match lhs.BitsEnd with
-                    | Some bits_end ->
-                        let end_val = evaluateConstantExpression ctx bits_end
-                        Some (makeConstantExpressionWithNum (end_val, bits_end.Location))
-                    | None -> lhs.BitsEnd
+                    //These following two fields should not be used anymore with new grammar, but we keep them for compatibility
+                    let new_lhs_bitstart = 
+                        match new_var_sel, new_width with
+                        | Some var_bitselect, Some width ->
+                            let start_val = tryEvaluateExpressionasInt ctx var_bitselect
+                            match start_val with
+                            | Some v ->
+                                let width_val = evaluateConstantExpression ctx width
+                                let end_val = v + width_val - 1 // calculate the end value based on the start value and width
+                                Some (makeConstantExpressionWithNum (end_val, var_bitselect.Location))
+                            | None -> None
+                        
+                        | _ -> None
+                    let new_lhs_bitend =
+                        match new_var_sel, new_width with
+                        | Some var_bitselect, Some width ->
+                            let start_val = tryEvaluateExpressionasInt ctx var_bitselect
+                            match start_val with
+                            | Some v ->
+                                Some (makeConstantExpressionWithNum (v, var_bitselect.Location))
+                            | None -> None
+                        | _ -> None
 
-                let new_lhs_variable_bitselect =
-                    match new_var_sel with
-                    | Some var_bitselect ->
-                        Some (unrollExpression ctx var_bitselect) // unroll the variable bit select expression
-                    | None -> None
-                let new_width =
-                    match new_width with
-                    | Some width ->
-                        let width_val = evaluateConstantExpression ctx width
-                        Some (makeConstantExpressionWithNum (width_val, width.Location)) // replace the width with a constant expression
-                    | None -> None // no width, so we just return None
-                {lhs with
-                    Primary = new_lhs_primary
-                    BitsStart = new_lhs_bitstart
-                    BitsEnd = new_lhs_bitend
-                    VariableBitSelect = new_lhs_variable_bitselect
-                    Width = new_width
-                }
-            printfn "Unrolling assignment LHS: %A" unrolled_lhs
+                    let new_lhs_variable_bitselect =
+                        match new_var_sel with
+                        | Some var_bitselect ->
+                            Some (unrollExpression ctx var_bitselect) // unroll the variable bit select expression
+                        | None -> None
+                    let new_width =
+                        match new_width with
+                        | Some width ->
+                            let width_val = evaluateConstantExpression ctx width
+                            Some (makeConstantExpressionWithNum (width_val, width.Location)) // replace the width with a constant expression
+                        | None -> None // no width, so we just return None
+                    {lhs with
+                        Primary = new_lhs_primary
+                        BitsStart = new_lhs_bitstart
+                        BitsEnd = new_lhs_bitend
+                        VariableBitSelect = new_lhs_variable_bitselect
+                        Width = new_width
+                    }
             let unrolled_rhs = unrollExpression ctx rhs
             {assignment with LHS = unrolled_lhs; RHS = unrolled_rhs} // replace the assignment with the unrolled
 
@@ -659,16 +764,57 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                 {statement with CaseStatement = Some {case_statement with Expression = new_expression; CaseItems = new_case_items; Default = new_default}} // replace the statement with the unrolled case statement
             | _ ->
                 // for all other statement types, we just return the statement as is
-                printf "Unrolling statement: %s\n" statement.StatementType
                 statement // return the
 
             // statement
 
         let rec unrollItem (ctx) (item: ItemT) =
             match item.ItemType with
-            | "IO_declaration" ->
-                // IO declarations are not context sensitive, so we can just return the item as is
-                ctx, [item]
+            // | "IO_declaration" ->
+            //     let new_ctx =
+            //         match item.IODecl with
+            //         | Some decl ->
+            //             let declaration_type = decl.DeclarationType
+            //             decl.Variables
+            //             |> Array.toList
+            //             |> List.map (fun io_decl -> io_decl.Name)
+            //             |> List.fold (fun (acc_ctx: context) str ->
+            //                 printf "acc_ctx: %A, str: %s\n" acc_ctx str
+            //                 match declaration_type with
+            //                 | "input_declaration" -> acc_ctx.addInput str
+            //                 | "output_declaration" -> acc_ctx.addOutput str
+            //                 | other -> failwithf "Unknown IO declaration type: %s" other
+            //             ) ctx
+            //         | None ->
+            //             failwithf "IODecl missing for item: %A" item
+            //     new_ctx, [item]
+            | "input_declaration" ->
+                let new_ctx =
+                    match item.IODecl with
+                    | Some decl ->
+                        decl.Variables
+                        |> Array.toList
+                        |> List.map (fun io_decl -> io_decl.Name)
+                        |> List.fold (fun (acc_ctx: context) str ->
+                            acc_ctx.addInput str
+                        ) ctx
+                    | None ->
+                        failwithf "IODecl missing for item: %A" item
+                new_ctx, [item]
+            | "output_declaration" ->
+                let new_ctx =
+                    match item.IODecl with
+                    | Some decl ->
+                        decl.Variables
+                        |> Array.toList
+                        |> List.map (fun io_decl -> io_decl.Name)
+                        |> List.fold (fun (acc_ctx: context) str ->
+                            acc_ctx.addOutput str
+                        ) ctx
+                    | None ->
+                        failwithf "IODecl missing for item: %A" item
+                printf "New context after output declaration: %A\n" new_ctx
+                new_ctx, [item]
             | "parameter_declaration" ->
                 let new_ctx, new_decl = unrollParamDecl ctx item.ParamDecl.Value
                 // parameter declaration determines the context, but itself is not part of non
@@ -805,9 +951,8 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                     raise (VerilogUnrollerException (sprintf "Loop ID %s and Step ID %s must be the same" loop_id step_id, item.Location))
 
                 let rec loopUnrollItems (ctx: context) (unrolled_items: ItemT list) (iter_count: int): (ItemT list * context) =
-                    //printf "enter context: %A\n" ctx
                     let loop_cond_value = evaluateConstantExpression ctx loop_generate_construct.CondExpr
-                    if iter_count > 1000 then
+                    if iter_count > 100 then
                         // prevent infinite loop, if the loop condition is always true
                         raise (VerilogUnrollerException ("Loop unrolling exceeded maximum iterations, prevent infinite loop", item.Location))
                     if (loop_cond_value <> 0) then
@@ -821,8 +966,7 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                             ) (new_ctx, [])
                             |> fun (new_ctx, unrolled_items) -> // context starts empty
                                 new_ctx, unrolled_items |> List.concat // now we only care about the unrolled items, don't care about the context
-                            
-                        // printf "Unrolling loop block items: %A\n" unrolled_block_items
+
                         // after unrolling the block, we need to update the loop variable and continue unrolling
                         let step_value = evaluateConstantExpression new_ctx loop_generate_construct.StepExpr
                         let new_ctx_with_step = new_ctx.assignCompileVar step_id step_value loop_generate_construct.StepId.Location // add the step value to the context
@@ -830,7 +974,6 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
 
                         // let final_ctx = next_unroll_ctx.popScope () // pop the scope after unrolling
 
-                        //printf "exit context: %A\n" (next_unroll_ctx.popScope())
                         next_rec_unroll, next_unroll_ctx.popScope()
 
                     else
@@ -839,13 +982,12 @@ let unrollVerilog (verilog: VerilogInput) (linesIndex)  =
                        
                 let start_value = evaluateConstantExpression ctx loop_generate_construct.StartExpr  
                 let start_ctx = ctx.assignCompileVar loop_id start_value loop_generate_construct.LoopId.Location// add the loop variable to the context with the start value  
-                printf "Starting loop unrolling with initial context: %A\n" start_ctx                  
+               
                 let unrolled_items, final_ctx = loopUnrollItems start_ctx [] 0 // start unrolling with the initial context and empty item list
-                printf "final ctx: %A\n" final_ctx
+
                 final_ctx, unrolled_items // return the item as is, no need to unroll
             | _ ->
-                // for all other items, we just return the item as is
-                printf "Unrolling item: %s\n" item.ItemType
+                printf "Unrolling item of untracked type %A...\n" item
                 ctx, [item] // return the item as is, no need to unroll
 
         let unrolledItems = 

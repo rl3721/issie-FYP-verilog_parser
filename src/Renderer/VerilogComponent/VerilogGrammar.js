@@ -142,15 +142,20 @@ var grammar = {
     {"name": "UNARY", "symbols": ["NUMBER"], "postprocess": function(d) {return {Type: "number", Primary: null, Number: d[0], Expression: null, Location: d[0].Location};}},
     {"name": "UNARY", "symbols": [(lexer.has("lparen") ? {type: "lparen"} : lparen), "_", "BITWISE_OR", "_", (lexer.has("rparen") ? {type: "rparen"} : rparen)], "postprocess": function(d) {return {Type: "parenthesis", Primary: null, Number: null, Expression: d[2], Location: d[2].Location};}},
     {"name": "UNARY", "symbols": ["CONCATENATIONS"], "postprocess": id},
-    {"name": "PRIMARY", "symbols": ["IDENTIFIER"], "postprocess": function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], Location: d[0].Location};}},
-    {"name": "PRIMARY", "symbols": ["IDENTIFIER", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "RANGE_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess":  function(d) {
+    {"name": "PRIMARY", "symbols": ["IDENTIFIER"], "postprocess": function(d) {return {Type: "primary", PrimaryType: "identifier", BitsStart: null, BitsEnd: null, Primary: d[0], Location: d[0].Location, Dimension: []};}},
+    {"name": "PRIMARY$ebnf$1", "symbols": []},
+    {"name": "PRIMARY$ebnf$1$subexpression$1", "symbols": [(lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "CONSTANT_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess": function(d) {return d[1];}},
+    {"name": "PRIMARY$ebnf$1", "symbols": ["PRIMARY$ebnf$1", "PRIMARY$ebnf$1$subexpression$1"], "postprocess": function arrpush(d) {return d[0].concat([d[1]]);}},
+    {"name": "PRIMARY", "symbols": ["IDENTIFIER", "PRIMARY$ebnf$1", (lexer.has("lbracket") ? {type: "lbracket"} : lbracket), "RANGE_EXPRESSION", (lexer.has("rbracket") ? {type: "rbracket"} : rbracket)], "postprocess":  function(d) {
             return {
                 Type: "primary",
                 PrimaryType: "identifier_bit_variable",
                 Primary: d[0],
-                Expression: d[2].lsb,
-                Width:d[2].width,
-                Location:d[1].offset
+                Expression: d[3].lsb,
+                VariableBitSelect: d[3].lsb,
+                Dimension: d[1],
+                Width:d[3].width,
+                Location:d[2].offset
             };
         } },
     {"name": "RANGE_EXPRESSION", "symbols": ["EXPRESSION", (lexer.has("pluscolon") ? {type: "pluscolon"} : pluscolon), "CONSTANT_EXPRESSION"], "postprocess": function(d) 
